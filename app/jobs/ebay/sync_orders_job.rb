@@ -144,8 +144,8 @@ module Ebay
     end
 
     def calc_shipping_cost(ebay_order)
-      shipping_cost = ebay_order['pricingSummary']['deliveryCost']['value']
-      shipping_discount = ebay_order['pricingSummary']['deliveryDiscount']['value']
+      shipping_cost = ebay_order['pricingSummary']['deliveryCost']['value'].to_i
+      shipping_discount = ebay_order.dig('pricingSummary', 'deliveryDiscount', 'value') || 0
       # Shipping discount is a negative value, so we add it to the shipping cost
       shipping_cost = shipping_cost + shipping_discount
       shipping_cost
