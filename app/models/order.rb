@@ -18,4 +18,10 @@ class Order < ApplicationRecord
   def platform_icon
     platform == 'shopify' ? 'bi-shop' : 'bi-bag'
   end
+
+  # TODO: This is a temporary method to check if the order is cancelled.
+  # We will need to add a more robust way to check if the order is cancelled.
+  def cancelled?
+    status == 'cancelled'
+  end
 end 

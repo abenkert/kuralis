@@ -188,7 +188,24 @@ module Ebay
           platform_item_id: line_item['legacyItemId']
         )
 
-        kuralis_product = KuralisProduct.find_by(ebay_listing_id: line_item['legacyItemId'])
+        kuralis_product = EbayListing.find_by(ebay_item_id: line_item['legacyItemId'])&.kuralis_product
+        
+        if kuralis_product
+          if order.cancelled?
+            InventoryService.release_inventory(
+              kuralis_product: kuralis_product,
+              quantity: line_item['quantity'],
+              order_item: order_item
+            )
+          else
+            InventoryService.allocate_inventory(
+              kuralis_product: kuralis_product,
+              quantity: line_item['quantity'],
+              order_item: order_item
+            )
+          end
+        end
+
         order_item.update!(
           title: line_item['title'],
           quantity: line_item['quantity'],

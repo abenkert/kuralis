@@ -23,8 +23,9 @@ class OrdersController < AuthenticatedController
   end
 
   def trigger_sync_orders
-    FetchShopifyOrdersJob.perform_later(current_shop.id)
+    # FetchShopifyOrdersJob.perform_later(current_shop.id)
     Ebay::SyncOrdersJob.perform_later(current_shop.id)
+    Shopify::SyncOrdersJob.perform_later(current_shop.id)
     
     flash[:notice] = "Orders sync has been triggered"
     redirect_to orders_path

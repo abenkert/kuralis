@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_01_29_160018) do
+ActiveRecord::Schema[8.0].define(version: 2025_02_25_182635) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -68,6 +68,22 @@ ActiveRecord::Schema[8.0].define(version: 2025_01_29_160018) do
     t.string "store_category_id"
     t.index ["shopify_ebay_account_id"], name: "index_ebay_listings_on_shopify_ebay_account_id"
     t.index ["store_category_id"], name: "index_ebay_listings_on_store_category_id"
+  end
+
+  create_table "inventory_transactions", force: :cascade do |t|
+    t.bigint "kuralis_product_id", null: false
+    t.bigint "order_item_id"
+    t.integer "quantity", null: false
+    t.string "transaction_type", null: false
+    t.integer "previous_quantity", null: false
+    t.integer "new_quantity", null: false
+    t.text "notes"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_at"], name: "index_inventory_transactions_on_created_at"
+    t.index ["kuralis_product_id"], name: "index_inventory_transactions_on_kuralis_product_id"
+    t.index ["order_item_id"], name: "index_inventory_transactions_on_order_item_id"
+    t.index ["transaction_type"], name: "index_inventory_transactions_on_transaction_type"
   end
 
   create_table "job_runs", force: :cascade do |t|
@@ -260,6 +276,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_01_29_160018) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "ebay_listings", "shopify_ebay_accounts"
+  add_foreign_key "inventory_transactions", "kuralis_products"
+  add_foreign_key "inventory_transactions", "order_items"
   add_foreign_key "job_runs", "shops"
   add_foreign_key "kuralis_products", "ebay_listings", on_delete: :nullify
   add_foreign_key "kuralis_products", "shopify_products", on_delete: :nullify

@@ -5,7 +5,7 @@ module OrdersHelper
       'bg-success'
     when 'in_progress'
       'bg-info'
-    when 'not_started'
+    when 'not_started', 'unfulfilled'
       'bg-warning'
     when 'cancelled'
       'bg-danger'
@@ -22,7 +22,7 @@ module OrdersHelper
       'Partially Shipped'
     when 'cancelled'
       'Cancelled'
-    when 'not_started'
+    when 'not_started', 'unfulfilled'
       'Awaiting Shipment'
     else
       'Unknown'
