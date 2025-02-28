@@ -52,6 +52,7 @@ Rails.application.routes.draw do
     post 'notifications', to: 'notifications#create'
     resources :listings, only: [:index] do
       collection do
+        resources :quick_sync, only: [:create]
         resources :synchronizations, only: [:create]
         resources :migrations, only: [:create] do
           get :unmigrated_count, on: :collection

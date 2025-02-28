@@ -13,7 +13,7 @@ class EbayListing < ApplicationRecord
   
   # Scopes
   scope :active, -> { where(ebay_status: 'active') }
-  scope :ended, -> { where(ebay_status: 'ended') }
+  scope :completed, -> { where(ebay_status: 'completed') }
   scope :needs_sync, -> { where('last_sync_at < updated_at OR last_sync_at IS NULL') }
   
   # Helper methods

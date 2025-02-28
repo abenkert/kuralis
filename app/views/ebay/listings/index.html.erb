@@ -31,7 +31,19 @@
             </div>
           <% end %>
         </li>
-        
+          <%= button_to ebay_quick_sync_index_path,
+              method: :post,
+              class: "dropdown-item d-flex align-items-center",
+              data: { turbo: true } do %>
+            <div class="d-flex align-items-center">
+              <span class="sync-text">Quick Sync</span>
+              <div class="spinner-border spinner-border-sm ms-2 d-none" 
+                   data-sync-target="spinner" 
+                   role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          <% end %>
         <li>
           <button type="button" 
                   class="dropdown-item" 
