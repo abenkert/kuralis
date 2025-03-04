@@ -2,6 +2,15 @@ class InventoryService
   class InsufficientInventoryError < StandardError; end
 
   def self.allocate_inventory(kuralis_product:, quantity:, order_item:)
+    p "Allocating inventory for #{kuralis_product.id}"
+    
+    # Check if we already have a transaction for this order item
+    return if InventoryTransaction.exists?(
+      kuralis_product: kuralis_product,
+      order_item: order_item,
+      transaction_type: 'allocation'
+    )
+
     kuralis_product.with_lock do
       if kuralis_product.quantity >= quantity
         inventory_transaction = InventoryTransaction.create!(
@@ -12,7 +21,7 @@ class InventoryService
           previous_quantity: kuralis_product.quantity,
           new_quantity: kuralis_product.quantity - quantity
         )
-
+        p "Inventory transaction created: #{inventory_transaction.id}"
         kuralis_product.update!(
           base_quantity: inventory_transaction.new_quantity,
           status: inventory_transaction.new_quantity.zero? ? 'completed' : kuralis_product.status
@@ -24,6 +33,13 @@ class InventoryService
   end
 
   def self.release_inventory(kuralis_product:, quantity:, order_item:)
+    # Check if we already have a transaction for this order item
+    return if InventoryTransaction.exists?(
+      kuralis_product: kuralis_product,
+      order_item: order_item,
+      transaction_type: 'release'
+    )
+
     kuralis_product.with_lock do
       inventory_transaction = InventoryTransaction.create!(
         kuralis_product: kuralis_product,

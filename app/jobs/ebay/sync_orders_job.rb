@@ -187,8 +187,10 @@ module Ebay
           platform: 'ebay',
           platform_item_id: line_item['legacyItemId']
         )
+        p order_item
 
         kuralis_product = EbayListing.find_by(ebay_item_id: line_item['legacyItemId'])&.kuralis_product
+        p kuralis_product
         
         if kuralis_product
           if order.cancelled?
