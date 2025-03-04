@@ -4,11 +4,8 @@ module Kuralis
 
     def index
       @filter = params[:filter] || 'all'
-      @products = current_shop.kuralis_products
-                            .order(created_at: :desc)
-                            .then { |query| apply_filter(query) }
-                            .page(params[:page])
-                            .per(25)
+      @collector = Kuralis::Collector.new(current_shop.id, params).gather_data
+      @products = @collector.products
     end
 
     def bulk_listing
@@ -92,21 +89,6 @@ module Kuralis
             render turbo_stream: turbo_stream.prepend("flash", partial: "shared/flash")
           }
         end
-      end
-    end
-
-    private
-
-    def apply_filter(query)
-      case @filter
-      when 'unlisted'
-        query.where(shopify_product_id: nil, ebay_listing_id: nil)
-      when 'shopify'
-        query.where.not(shopify_product_id: nil)
-      when 'ebay'
-        query.where.not(ebay_listing_id: nil)
-      else
-        query
       end
     end
   end
