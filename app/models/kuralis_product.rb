@@ -48,14 +48,15 @@ class KuralisProduct < ApplicationRecord
   
   def schedule_platform_updates
     # Queue jobs to update associated platforms
-    if ebay_listing.present?
-      Ebay::UpdateListingJob.perform_later(ebay_listing.id)
-      Rails.logger.info "Scheduled eBay update for listing #{ebay_listing.id} after inventory change"
-    end
+    Rails.logger.info "Scheduling platform updates for #{id}"
+    # if ebay_listing.present?
+    #   Ebay::UpdateListingJob.perform_later(ebay_listing.id)
+    #   Rails.logger.info "Scheduled eBay update for listing #{ebay_listing.id} after inventory change"
+    # end
     
-    if shopify_product.present?
-      Shopify::UpdateProductJob.perform_later(shopify_product.id)
-      Rails.logger.info "Scheduled Shopify update for product #{shopify_product.id} after inventory change"
-    end
+    # if shopify_product.present?
+    #   Shopify::UpdateProductJob.perform_later(shopify_product.id)
+    #   Rails.logger.info "Scheduled Shopify update for product #{shopify_product.id} after inventory change"
+    # end
   end
 end 
