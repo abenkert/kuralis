@@ -13,16 +13,28 @@
           class: "btn #{@filter == 'ebay' ? 'btn-primary' : 'btn-outline-secondary'}" %>
     </div>
 
-    <div class="btn-group">
-      <%= link_to bulk_listing_kuralis_products_path(platform: 'shopify'), 
-          class: "btn btn-outline-primary" do %>
-        <i class="bi bi-shop me-1"></i>Bulk List to Shopify
+    <div class="dropdown">
+      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-plus-circle me-1"></i>Actions
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li>
+          <%= link_to new_kuralis_product_path, class: "dropdown-item" do %>
+            <i class="bi bi-plus-circle me-2"></i>Create New Product
+          <% end %>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <%= link_to bulk_listing_kuralis_products_path(platform: 'shopify'), class: "dropdown-item" do %>
+            <i class="bi bi-shop me-2"></i>Bulk List to Shopify
       <% end %>
-      
-      <%= link_to bulk_listing_kuralis_products_path(platform: 'ebay'), 
-          class: "btn btn-outline-warning" do %>
-        <i class="bi bi-tags me-1"></i>Bulk List to eBay
+        </li>
+        <li>
+          <%= link_to bulk_listing_kuralis_products_path(platform: 'ebay'), class: "dropdown-item" do %>
+            <i class="bi bi-tags me-2"></i>Bulk List to eBay
       <% end %>
+        </li>
+      </ul>
     </div>
   </div>
 

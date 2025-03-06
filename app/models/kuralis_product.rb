@@ -16,6 +16,15 @@ class KuralisProduct < ApplicationRecord
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
   after_update :schedule_platform_updates, if: :saved_change_to_base_quantity?
 
+  # Handle tags input
+  def tags=(value)
+    if value.is_a?(String)
+      super(value.split(',').map(&:strip))
+    else
+      super
+    end
+  end
+
   # Platform presence checks
   def listed_on_shopify?
     shopify_product.present?

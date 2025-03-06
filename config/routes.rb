@@ -36,7 +36,7 @@ Rails.application.routes.draw do
   get 'settings', to: 'settings#index', as: :settings
 
   namespace :kuralis do
-    resources :products, only: [:index, :destroy] do
+    resources :products, only: [:index, :new, :create, :destroy] do
       collection do
         post :bulk_action
         get :bulk_listing

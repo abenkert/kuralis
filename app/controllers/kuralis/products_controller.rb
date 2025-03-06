@@ -8,6 +8,21 @@ module Kuralis
       @products = @collector.products
     end
 
+    def new
+      @product = KuralisProduct.new
+    end
+
+    def create
+      @product = current_shop.kuralis_products.new(product_params)
+      @product.source_platform = 'manual'
+      
+      if @product.save
+        redirect_to kuralis_products_path, notice: "Product was successfully created."
+      else
+        render :new, status: :unprocessable_entity
+      end
+    end
+
     def bulk_listing
       @platform = params[:platform]
       @total_count = current_shop.kuralis_products
@@ -90,6 +105,25 @@ module Kuralis
           }
         end
       end
+    end
+
+    private
+
+    def product_params
+      params.require(:kuralis_product).permit(
+        :title, 
+        :description, 
+        :base_price, 
+        :base_quantity, 
+        :sku, 
+        :brand, 
+        :condition, 
+        :location, 
+        :weight_oz,
+        images: [], 
+        tags: [], 
+        product_attributes: {}
+      )
     end
   end
 end
