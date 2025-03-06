@@ -98,7 +98,7 @@ export default class extends Controller {
     
     try {
       // First fetch the total count of unmigrated listings
-      const response = await fetch('/ebay/migrations/unmigrated_count')
+      const response = await fetch('/ebay/listings/migrations/unmigrated_count')
       const data = await response.json()
       
       if (data.count === 0) {
@@ -109,7 +109,7 @@ export default class extends Controller {
       if (confirm(`Are you sure you want to migrate all ${data.count} listings? This may take some time.`)) {
         const form = document.createElement('form')
         form.method = 'POST'
-        form.action = '/ebay/migrations'
+        form.action = '/ebay/listings/migrations'
         
         // Add authenticity token
         const authToken = document.querySelector('meta[name="csrf-token"]').content

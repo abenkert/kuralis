@@ -152,6 +152,7 @@
                           <tr>
                             <th>Item</th>
                             <th>Quantity</th>
+                            <th>Location</th>
                             <th>Product</th>
                             <th>Actions</th>
                           </tr>
@@ -163,8 +164,13 @@
                               <td><%= item.quantity %></td>
                               <td>
                                 <% if item.kuralis_product %>
+                                  <%= item.kuralis_product.location %>
+                                <% end %>
+                              </td>
+                              <td>
+                                <% if item.kuralis_product %>
                                   <%= link_to item.kuralis_product.title, 
-                                      product_path(item.kuralis_product),
+                                      '#',
                                       class: "text-decoration-none" %>
                                 <% else %>
                                   <span class="text-muted">No product linked</span>
@@ -172,7 +178,7 @@
                               </td>
                               <td>
                                 <% if item.kuralis_product %>
-                                  <%= link_to "View Product", product_path(item.kuralis_product),
+                                  <%= link_to "View Product", '#',
                                       class: "btn btn-sm btn-outline-primary" %>
                                 <% end %>
                               </td>

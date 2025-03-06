@@ -5,7 +5,8 @@ module Ebay
         # Get all unmigrated listing IDs from the database
         current_shop.shopify_ebay_account
                    .ebay_listings
-                   .where(kuralis_product_id: nil)
+                   .left_joins(:kuralis_product)
+                   .where(kuralis_products: { id: nil })
                    .pluck(:id)
       else
         params[:listing_ids]
@@ -38,9 +39,11 @@ module Ebay
 
     # Add endpoint to get count of unmigrated listings
     def unmigrated_count
+      # Query for listings that don't have an associated kuralis_product
       count = current_shop.shopify_ebay_account
                          .ebay_listings
-                         .where(kuralis_product_id: nil)
+                         .left_joins(:kuralis_product)
+                         .where(kuralis_products: { id: nil })
                          .count
       
       render json: { count: count }

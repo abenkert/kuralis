@@ -14,7 +14,7 @@ class KuralisProduct < ApplicationRecord
   scope :from_ebay, -> { where(source_platform: 'ebay') }
   scope :from_shopify, -> { where(source_platform: 'shopify') }
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
-  after_update :schedule_platform_updates, if: :saved_change_to_quantity?
+  after_update :schedule_platform_updates, if: :saved_change_to_base_quantity?
 
   # Platform presence checks
   def listed_on_shopify?
@@ -49,6 +49,8 @@ class KuralisProduct < ApplicationRecord
   def schedule_platform_updates
     # Queue jobs to update associated platforms
     Rails.logger.info "Scheduling platform updates for #{id}"
+    # TODO: Add platform update jobs here
+    # TODO: This is where we will schedule the jobs to update the quantity on associated platforms
     # if ebay_listing.present?
     #   Ebay::UpdateListingJob.perform_later(ebay_listing.id)
     #   Rails.logger.info "Scheduled eBay update for listing #{ebay_listing.id} after inventory change"

@@ -12,14 +12,14 @@ class InventoryService
     )
 
     kuralis_product.with_lock do
-      if kuralis_product.quantity >= quantity
+      if kuralis_product.base_quantity >= quantity
         inventory_transaction = InventoryTransaction.create!(
           kuralis_product: kuralis_product,
           order_item: order_item,
           quantity: -quantity,
           transaction_type: 'allocation',
-          previous_quantity: kuralis_product.quantity,
-          new_quantity: kuralis_product.quantity - quantity
+          previous_quantity: kuralis_product.base_quantity,
+          new_quantity: kuralis_product.base_quantity - quantity
         )
         p "Inventory transaction created: #{inventory_transaction.id}"
         kuralis_product.update!(
@@ -46,8 +46,8 @@ class InventoryService
         order_item: order_item,
         quantity: quantity,
         transaction_type: 'release',
-        previous_quantity: kuralis_product.quantity,
-        new_quantity: kuralis_product.quantity + quantity
+        previous_quantity: kuralis_product.base_quantity,
+        new_quantity: kuralis_product.base_quantity + quantity
       )
 
       kuralis_product.update!(
@@ -62,12 +62,12 @@ class InventoryService
       # Calculate expected inventory based on initial quantity and all transactions
       expected_quantity = calculate_expected_quantity(kuralis_product)
       
-      if expected_quantity != kuralis_product.quantity
+      if expected_quantity != kuralis_product.base_quantity
         InventoryTransaction.create!(
           kuralis_product: kuralis_product,
-          quantity: expected_quantity - kuralis_product.quantity,
+          quantity: expected_quantity - kuralis_product.base_quantity,
           transaction_type: 'reconciliation',
-          previous_quantity: kuralis_product.quantity,
+          previous_quantity: kuralis_product.base_quantity,
           new_quantity: expected_quantity,
           notes: "Inventory reconciliation adjustment"
         )
