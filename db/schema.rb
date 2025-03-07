@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_02_25_182635) do
+ActiveRecord::Schema[8.0].define(version: 2025_03_06_163237) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -68,6 +68,21 @@ ActiveRecord::Schema[8.0].define(version: 2025_02_25_182635) do
     t.string "store_category_id"
     t.index ["shopify_ebay_account_id"], name: "index_ebay_listings_on_shopify_ebay_account_id"
     t.index ["store_category_id"], name: "index_ebay_listings_on_store_category_id"
+  end
+
+  create_table "ebay_product_attributes", force: :cascade do |t|
+    t.bigint "kuralis_product_id", null: false
+    t.string "condition_id"
+    t.string "condition_description"
+    t.string "category_id"
+    t.jsonb "item_specifics", default: {}
+    t.string "listing_duration"
+    t.boolean "best_offer_enabled", default: true
+    t.string "shipping_profile_id"
+    t.string "store_category_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["kuralis_product_id"], name: "index_ebay_product_attributes_on_kuralis_product_id", unique: true
   end
 
   create_table "inventory_transactions", force: :cascade do |t|
@@ -276,6 +291,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_02_25_182635) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "ebay_listings", "shopify_ebay_accounts"
+  add_foreign_key "ebay_product_attributes", "kuralis_products"
   add_foreign_key "inventory_transactions", "kuralis_products"
   add_foreign_key "inventory_transactions", "order_items"
   add_foreign_key "job_runs", "shops"
