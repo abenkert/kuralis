@@ -132,7 +132,8 @@ module Kuralis
           :condition_description,
           :listing_duration,
           :shipping_profile_id,
-          :best_offer_enabled
+          :best_offer_enabled,
+          item_specifics: {}
         ]
       )
     end

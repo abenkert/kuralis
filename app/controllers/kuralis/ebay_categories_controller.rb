@@ -1,4 +1,4 @@
-class Kuralis::EbayCategoriesController < ApplicationController
+class Kuralis::EbayCategoriesController < AuthenticatedController
   
   # GET /kuralis/ebay_categories/search
   # Search for eBay categories by name
@@ -69,6 +69,40 @@ class Kuralis::EbayCategoriesController < ApplicationController
     respond_to do |format|
       format.html # index.html.erb
       format.json { render json: @categories }
+    end
+  end
+  
+  # GET /kuralis/ebay_categories/:id/item_specifics
+  def item_specifics
+    category_id = params[:id]
+    marketplace_id = params[:marketplace_id] || 'EBAY_US'
+    
+    # Check if we have cached item specifics
+    cached_specifics = EbayCategory.find_by(category_id: category_id, marketplace_id: marketplace_id)&.metadata&.dig('item_specifics')
+    
+    if cached_specifics.present?
+      @item_specifics = cached_specifics
+    else
+      # Fetch from eBay API
+      ebay_account = current_shop.shopify_ebay_account
+      if ebay_account.present?
+        service = Ebay::TaxonomyService.new(ebay_account)
+        @item_specifics = service.fetch_item_aspects(category_id)
+        
+        # Cache the results in the category metadata
+        category = EbayCategory.find_by(category_id: category_id, marketplace_id: marketplace_id)
+        if category.present?
+          metadata = category.metadata || {}
+          metadata['item_specifics'] = @item_specifics
+          category.update(metadata: metadata)
+        end
+      else
+        @item_specifics = []
+      end
+    end
+    
+    respond_to do |format|
+      format.json { render json: @item_specifics }
     end
   end
 end

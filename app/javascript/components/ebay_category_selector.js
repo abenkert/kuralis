@@ -221,6 +221,9 @@ class EbayCategorySelector {
     // Clear the search input
     this.searchInput.value = '';
     
+    // Fetch item specifics for this category
+    this.fetchItemSpecifics(category.category_id);
+    
     // Trigger change event on hidden input
     const event = new Event('change', { bubbles: true });
     this.hiddenInput.dispatchEvent(event);
@@ -232,6 +235,9 @@ class EbayCategorySelector {
     this.selectedDisplay.innerHTML = '';
     this.selectedDisplay.classList.add('d-none');
     
+    // Clear item specifics
+    this.clearItemSpecifics();
+    
     // Trigger change event on hidden input
     const event = new Event('change', { bubbles: true });
     this.hiddenInput.dispatchEvent(event);
@@ -239,6 +245,227 @@ class EbayCategorySelector {
   
   hideResults() {
     this.resultsContainer.classList.remove('show');
+  }
+  
+  // Add these new methods for item specifics
+  fetchItemSpecifics(categoryId) {
+    const url = `/kuralis/ebay_categories/${categoryId}/item_specifics.json`;
+    
+    // Show loading indicator
+    this.showItemSpecificsLoading();
+    
+    fetch(url)
+      .then(response => response.json())
+      .then(itemSpecifics => {
+        this.renderItemSpecificsForm(itemSpecifics);
+      })
+      .catch(error => {
+        console.error('Error fetching item specifics:', error);
+        this.showItemSpecificsError();
+      });
+  }
+  
+  showItemSpecificsLoading() {
+    // Find or create the container for item specifics
+    let container = this.getOrCreateItemSpecificsContainer();
+    
+    // Show loading indicator
+    container.innerHTML = `
+      <div class="text-center my-4">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2 text-muted">Loading item specifics...</p>
+      </div>
+    `;
+  }
+  
+  showItemSpecificsError() {
+    let container = this.getOrCreateItemSpecificsContainer();
+    
+    container.innerHTML = `
+      <div class="alert alert-warning my-3">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        Failed to load item specifics for this category. Please try again later.
+      </div>
+    `;
+  }
+  
+  getOrCreateItemSpecificsContainer() {
+    // Find or create the container for item specifics
+    let container = document.getElementById('ebay-item-specifics-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'ebay-item-specifics-container';
+      container.className = 'mt-4 pt-4 border-top';
+      
+      // Find a good place to insert it in the form
+      const ebayTab = document.getElementById('ebay-info');
+      if (ebayTab) {
+        // Insert after the best offer switch
+        const bestOfferRow = ebayTab.querySelector('.form-check-input[role="switch"]').closest('.row');
+        if (bestOfferRow) {
+          bestOfferRow.after(container);
+        } else {
+          ebayTab.appendChild(container);
+        }
+      }
+    }
+    
+    return container;
+  }
+  
+  clearItemSpecifics() {
+    const container = document.getElementById('ebay-item-specifics-container');
+    if (container) {
+      container.innerHTML = '';
+    }
+  }
+  
+  renderItemSpecificsForm(itemSpecifics) {
+    const container = this.getOrCreateItemSpecificsContainer();
+    
+    // Clear existing content
+    container.innerHTML = '';
+    
+    if (!itemSpecifics || itemSpecifics.length === 0) {
+      container.innerHTML = '<p class="text-muted">No item specifics available for this category.</p>';
+      return;
+    }
+    
+    // Add a heading
+    const heading = document.createElement('h5');
+    heading.className = 'mb-3';
+    heading.textContent = 'Item Specifics';
+    container.appendChild(heading);
+    
+    // Create a description
+    const description = document.createElement('p');
+    description.className = 'text-muted mb-4';
+    description.textContent = 'These fields are specific to the selected eBay category and help buyers find your item.';
+    container.appendChild(description);
+    
+    // Group required and optional specifics
+    const requiredSpecifics = itemSpecifics.filter(spec => spec.required);
+    const optionalSpecifics = itemSpecifics.filter(spec => !spec.required);
+    
+    // Create form fields for required item specifics
+    if (requiredSpecifics.length > 0) {
+      const requiredHeading = document.createElement('h6');
+      requiredHeading.className = 'mb-3 text-danger';
+      requiredHeading.innerHTML = '<i class="fas fa-asterisk me-1"></i> Required Fields';
+      container.appendChild(requiredHeading);
+      
+      this.createSpecificFields(container, requiredSpecifics);
+    }
+    
+    // Create form fields for optional item specifics
+    if (optionalSpecifics.length > 0) {
+      const optionalHeading = document.createElement('h6');
+      optionalHeading.className = 'mb-3 mt-4';
+      optionalHeading.innerHTML = '<i class="fas fa-plus-circle me-1"></i> Optional Fields';
+      container.appendChild(optionalHeading);
+      
+      this.createSpecificFields(container, optionalSpecifics);
+    }
+  }
+  
+  createSpecificFields(container, specifics) {
+    // Create a row for the fields
+    const row = document.createElement('div');
+    row.className = 'row g-3';
+    container.appendChild(row);
+    
+    // Create form fields for each item specific
+    specifics.forEach(specific => {
+      const col = document.createElement('div');
+      col.className = 'col-md-6 mb-3';
+      
+      const formGroup = document.createElement('div');
+      formGroup.className = 'form-group';
+      
+      // Create label
+      const label = document.createElement('label');
+      label.className = 'form-label';
+      label.textContent = specific.name;
+      if (specific.required) {
+        const requiredSpan = document.createElement('span');
+        requiredSpan.className = 'text-danger ms-1';
+        requiredSpan.textContent = '*';
+        label.appendChild(requiredSpan);
+      }
+      
+      // Create input based on value_type
+      let input;
+      if (specific.value_type === 'select' && specific.values && specific.values.length > 0) {
+        input = document.createElement('select');
+        input.className = 'form-select';
+        
+        // Add blank option
+        const blankOption = document.createElement('option');
+        blankOption.value = '';
+        blankOption.textContent = `Select ${specific.name}`;
+        input.appendChild(blankOption);
+        
+        // Add options
+        specific.values.forEach(value => {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = value;
+          input.appendChild(option);
+        });
+      } else if (specific.value_type === 'text_with_suggestions' && specific.values && specific.values.length > 0) {
+        // Create a datalist for suggestions
+        const datalistId = `datalist-${specific.name.replace(/\s+/g, '-').toLowerCase()}`;
+        
+        input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'form-control';
+        input.placeholder = `Enter ${specific.name}`;
+        input.setAttribute('list', datalistId);
+        
+        const datalist = document.createElement('datalist');
+        datalist.id = datalistId;
+        
+        specific.values.forEach(value => {
+          const option = document.createElement('option');
+          option.value = value;
+          datalist.appendChild(option);
+        });
+        
+        formGroup.appendChild(datalist);
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'form-control';
+        input.placeholder = `Enter ${specific.name}`;
+      }
+      
+      // Set name and id for the input
+      const fieldName = specific.name.replace(/\s+/g, '_').toLowerCase();
+      input.name = `kuralis_product[ebay_product_attribute_attributes][item_specifics][${fieldName}]`;
+      input.id = `kuralis_product_ebay_product_attribute_attributes_item_specifics_${fieldName}`;
+      
+      // Add required attribute if needed
+      if (specific.required) {
+        input.required = true;
+      }
+      
+      // Assemble the form group
+      formGroup.appendChild(label);
+      formGroup.appendChild(input);
+      
+      // Add help text if available for text inputs with suggestions
+      if (specific.value_type === 'text' && specific.values && specific.values.length > 0) {
+        const helpText = document.createElement('small');
+        helpText.className = 'form-text text-muted';
+        helpText.textContent = `Suggested: ${specific.values.join(', ')}`;
+        formGroup.appendChild(helpText);
+      }
+      
+      col.appendChild(formGroup);
+      row.appendChild(col);
+    });
   }
 }
 

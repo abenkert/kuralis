@@ -38,7 +38,11 @@ Rails.application.routes.draw do
   namespace :kuralis do
     get "ebay_categories/search"
     post "ebay_categories/import"
-    resources :ebay_categories, only: [:index]
+    resources :ebay_categories, only: [:index] do
+      member do
+        get :item_specifics
+      end
+    end
     
     resources :products, only: [:index, :new, :create, :destroy] do
       collection do
