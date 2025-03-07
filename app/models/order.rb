@@ -1,6 +1,7 @@
 class Order < ApplicationRecord
   belongs_to :shop
   has_many :order_items, dependent: :destroy
+  has_many :inventory_transactions, dependent: :nullify
   
   validates :platform, presence: true
   validates :platform_order_id, presence: true, 

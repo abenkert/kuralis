@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_03_07_013637) do
+ActiveRecord::Schema[8.0].define(version: 2025_03_07_171335) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -112,8 +112,10 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_07_013637) do
     t.text "notes"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "order_id"
     t.index ["created_at"], name: "index_inventory_transactions_on_created_at"
     t.index ["kuralis_product_id"], name: "index_inventory_transactions_on_kuralis_product_id"
+    t.index ["order_id"], name: "index_inventory_transactions_on_order_id"
     t.index ["order_item_id"], name: "index_inventory_transactions_on_order_item_id"
     t.index ["transaction_type"], name: "index_inventory_transactions_on_transaction_type"
   end
@@ -178,10 +180,12 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_07_013637) do
     t.integer "successful_product_ids", default: [], array: true
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "status", default: "info", null: false
     t.index ["failed_product_ids"], name: "index_notifications_on_failed_product_ids", using: :gin
     t.index ["shop_id", "category"], name: "index_notifications_on_shop_id_and_category"
     t.index ["shop_id", "read"], name: "index_notifications_on_shop_id_and_read"
     t.index ["shop_id"], name: "index_notifications_on_shop_id"
+    t.index ["status"], name: "index_notifications_on_status"
     t.index ["successful_product_ids"], name: "index_notifications_on_successful_product_ids", using: :gin
   end
 
@@ -311,6 +315,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_07_013637) do
   add_foreign_key "ebay_product_attributes", "kuralis_products"
   add_foreign_key "inventory_transactions", "kuralis_products"
   add_foreign_key "inventory_transactions", "order_items"
+  add_foreign_key "inventory_transactions", "orders"
   add_foreign_key "job_runs", "shops"
   add_foreign_key "kuralis_products", "ebay_listings", on_delete: :nullify
   add_foreign_key "kuralis_products", "shopify_products", on_delete: :nullify

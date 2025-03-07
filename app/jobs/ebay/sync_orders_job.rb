@@ -117,9 +117,14 @@ module Ebay
     def update_order_status(order, ebay_order)
       order_status = determine_order_status(ebay_order)
       shipping_cost = calc_shipping_cost(ebay_order)
+      
+      # Convert string values to BigDecimal for proper decimal arithmetic
+      subtotal = BigDecimal(ebay_order['pricingSummary']['priceSubtotal']['value'].to_s)
+      total_price = BigDecimal(ebay_order['pricingSummary']['total']['value'].to_s)
+      
       order.assign_attributes(
-        subtotal: ebay_order['pricingSummary']['priceSubtotal']['value'],
-        total_price: ebay_order['pricingSummary']['total']['value'],
+        subtotal: subtotal,
+        total_price: total_price,
         shipping_cost: shipping_cost,
         fulfillment_status: order_status,
         payment_status: ebay_order['orderPaymentStatus'],
@@ -144,10 +149,20 @@ module Ebay
     end
 
     def calc_shipping_cost(ebay_order)
-      shipping_cost = ebay_order['pricingSummary']['deliveryCost']['value'].to_i
-      shipping_discount = ebay_order.dig('pricingSummary', 'deliveryDiscount', 'value') || 0
+      # Convert string values to BigDecimal for proper decimal arithmetic
+      shipping_cost = BigDecimal(ebay_order['pricingSummary']['deliveryCost']['value'].to_s)
+      
+      # Safely handle shipping discount which might not exist
+      shipping_discount = if ebay_order.dig('pricingSummary', 'deliveryDiscount', 'value')
+                           BigDecimal(ebay_order.dig('pricingSummary', 'deliveryDiscount', 'value').to_s)
+                         else
+                           BigDecimal('0')
+                         end
+      
       # Shipping discount is a negative value, so we add it to the shipping cost
       shipping_cost = shipping_cost + shipping_discount
+      
+      # Return as BigDecimal
       shipping_cost
     end
 
@@ -183,36 +198,46 @@ module Ebay
 
     def process_order_items(order, ebay_order)
       ebay_order['lineItems'].each do |line_item|
+        # Ensure quantity is an integer
+        quantity = line_item['quantity'].to_i
+        
+        # Find the associated Kuralis product
+        kuralis_product = EbayListing.find_by(ebay_item_id: line_item['legacyItemId'])&.kuralis_product
+        
+        # Find or initialize the order item with all attributes
         order_item = order.order_items.find_or_initialize_by(
           platform: 'ebay',
           platform_item_id: line_item['legacyItemId']
         )
-        p order_item
-
-        kuralis_product = EbayListing.find_by(ebay_item_id: line_item['legacyItemId'])&.kuralis_product
-        p kuralis_product
         
+        # Set all attributes
+        order_item.assign_attributes(
+          title: line_item['title'],
+          quantity: quantity,
+          kuralis_product: kuralis_product
+        )
+        
+        # Save the order item to get an id
+        order_item.save!
+        
+        # Process inventory if we have a Kuralis product
         if kuralis_product
           if order.cancelled?
             InventoryService.release_inventory(
               kuralis_product: kuralis_product,
-              quantity: line_item['quantity'],
+              quantity: quantity,
+              order: order,
               order_item: order_item
             )
           else
             InventoryService.allocate_inventory(
               kuralis_product: kuralis_product,
-              quantity: line_item['quantity'],
+              quantity: quantity,
+              order: order,
               order_item: order_item
             )
           end
         end
-
-        order_item.update!(
-          title: line_item['title'],
-          quantity: line_item['quantity'],
-          kuralis_product: kuralis_product
-        )
       end
     end
   end
