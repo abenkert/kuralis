@@ -8,3 +8,4 @@ pin "bootstrap", to: "https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/boots
 pin "@popperjs/core", to: "https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/esm/popper.js"
 pin_all_from "app/javascript/controllers", under: "controllers"
 pin_all_from "app/javascript/lib", under: "lib"
+pin_all_from "app/javascript/components", under: "components"

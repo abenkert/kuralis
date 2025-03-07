@@ -26,126 +26,267 @@
           </div>
         <% end %>
 
-        <div class="row mb-4">
-          <div class="col-md-12">
-            <div class="form-group">
-              <label class="form-label fw-bold">Product Images</label>
-              <div class="image-upload-container" id="imageUploadContainer">
-                <div class="dropzone-container" id="dropzone">
-                  <div class="dropzone-content text-center p-4">
-                    <i class="fas fa-cloud-upload-alt fa-3x mb-3 text-muted"></i>
-                    <p class="mb-1">Drag and drop images here</p>
-                    <p class="text-muted small mb-3">or</p>
-                    <label for="product_images" class="btn btn-outline-primary">
-                      Browse Files
-                    </label>
-                    <%= form.file_field :images, multiple: true, class: "d-none", id: "product_images", accept: "image/*" %>
-                    <p class="text-muted small mt-2">You can upload multiple images</p>
+        <!-- Nav tabs for product form sections -->
+        <ul class="nav nav-tabs mb-4" id="productFormTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic-info" type="button" role="tab" aria-controls="basic-info" aria-selected="true">Basic Info</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="ebay-tab" data-bs-toggle="tab" data-bs-target="#ebay-info" type="button" role="tab" aria-controls="ebay-info" aria-selected="false">eBay Listing</button>
+          </li>
+        </ul>
+
+        <!-- Tab content -->
+        <div class="tab-content" id="productFormTabContent">
+          <!-- Basic Info Tab -->
+          <div class="tab-pane fade show active" id="basic-info" role="tabpanel" aria-labelledby="basic-tab">
+            <div class="row mb-4">
+              <div class="col-md-12">
+                <div class="form-group">
+                  <label class="form-label fw-bold">Product Images</label>
+                  <div class="image-upload-container" id="imageUploadContainer">
+                    <div class="dropzone-container" id="dropzone">
+                      <div class="dropzone-content text-center p-4">
+                        <i class="fas fa-cloud-upload-alt fa-3x mb-3 text-muted"></i>
+                        <p class="mb-1">Drag and drop images here</p>
+                        <p class="text-muted small mb-3">or</p>
+                        <label for="product_images" class="btn btn-outline-primary">
+                          Browse Files
+                        </label>
+                        <%= form.file_field :images, multiple: true, class: "d-none", id: "product_images", accept: "image/*" %>
+                        <p class="text-muted small mt-2">You can upload multiple images</p>
+                      </div>
+                    </div>
+                    <div class="image-preview-container mt-3 d-flex flex-wrap" id="imagePreviewContainer">
+                      <!-- Image previews will be inserted here -->
+                    </div>
                   </div>
                 </div>
-                <div class="image-preview-container mt-3 d-flex flex-wrap" id="imagePreviewContainer">
-                  <!-- Image previews will be inserted here -->
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <%= form.label :title, class: "form-label" %>
+                  <%= form.text_field :title, class: "form-control", required: true %>
+                  <div class="invalid-feedback">Title is required</div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <%= form.label :sku, "SKU", class: "form-label" %>
+                  <%= form.text_field :sku, class: "form-control" %>
+                  <small class="form-text text-muted">Unique identifier for your product</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-12">
+                <div class="form-group">
+                  <%= form.label :description, class: "form-label" %>
+                  <%= form.text_area :description, class: "form-control", rows: 4 %>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-4">
+                <div class="form-group">
+                  <%= form.label :base_price, "Price", class: "form-label" %>
+                  <div class="input-group">
+                    <span class="input-group-text">$</span>
+                    <%= form.number_field :base_price, class: "form-control", step: "0.01", min: "0" %>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <%= form.label :base_quantity, "Quantity", class: "form-label" %>
+                  <%= form.number_field :base_quantity, class: "form-control", min: "0", required: true %>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <%= form.label :weight_oz, "Weight (oz)", class: "form-label" %>
+                  <%= form.number_field :weight_oz, class: "form-control", step: "0.01", min: "0" %>
+                  <small class="form-text text-muted">Weight in ounces</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-4">
+                <div class="form-group">
+                  <%= form.label :brand, class: "form-label" %>
+                  <%= form.text_field :brand, class: "form-control" %>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <%= form.label :condition, class: "form-label" %>
+                  <%= form.select :condition, 
+                      [
+                        ["New", "New"], 
+                        ["Used - Like New", "Used - Like New"],
+                        ["Used - Very Good", "Used - Very Good"],
+                        ["Used - Good", "Used - Good"],
+                        ["Used - Acceptable", "Used - Acceptable"],
+                        ["For Parts or Not Working", "For Parts or Not Working"]
+                      ], 
+                      { include_blank: "Select Condition" }, 
+                      { class: "form-select" } 
+                  %>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <%= form.label :location, class: "form-label" %>
+                  <%= form.text_field :location, class: "form-control" %>
+                  <small class="form-text text-muted">Storage location (e.g., "Shelf A3")</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-12">
+                <div class="form-group">
+                  <%= form.label :tags, class: "form-label" %>
+                  <%= form.text_field :tags, class: "form-control", placeholder: "Enter tags separated by commas" %>
+                  <small class="form-text text-muted">Tags help categorize your products (e.g., "electronics, vintage, sale")</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- eBay Info Tab -->
+          <div class="tab-pane fade" id="ebay-info" role="tabpanel" aria-labelledby="ebay-tab">
+            <div class="row mb-3">
+              <div class="col-md-12">
+                <p class="text-muted mb-4">
+                  Configure eBay-specific details for this product. These settings will be used when you list this product on eBay.
+                </p>
+              </div>
+            </div>
+            
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
+                    <%= ebay_fields.label :category_id, "eBay Category", class: "form-label" %>
+                    <%= ebay_fields.text_field :category_id, 
+                        class: "form-control", 
+                        data: { 
+                          ebay_category_selector: true, 
+                          options: { placeholder: "Search for eBay category..." }.to_json 
+                        } 
+                    %>
+                    <small class="form-text text-muted">Search for the most specific category for your product</small>
+                  <% end %>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
+                    <%= ebay_fields.label :store_category_id, "eBay Store Category", class: "form-label" %>
+                    <%= ebay_fields.select :store_category_id, 
+                        current_shop.shopify_ebay_account&.store_categories&.map { |c| [c["name"], c["category_id"]] } || [], 
+                        { include_blank: "Select Store Category" }, 
+                        { class: "form-select" } 
+                    %>
+                  <% end %>
+                </div>
+              </div>
+            </div>
+            
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
+                    <%= ebay_fields.label :condition_id, "eBay Condition", class: "form-label" %>
+                    <%= ebay_fields.select :condition_id, 
+                        [
+                          ["New", "1000"],
+                          ["New other (see details)", "1500"],
+                          ["New with defects", "1750"],
+                          ["Manufacturer refurbished", "2000"],
+                          ["Seller refurbished", "2500"],
+                          ["Used", "3000"],
+                          ["Very Good", "4000"],
+                          ["Good", "5000"],
+                          ["Acceptable", "6000"],
+                          ["For parts or not working", "7000"]
+                        ], 
+                        { include_blank: "Select Condition" }, 
+                        { class: "form-select" } 
+                    %>
+                  <% end %>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
+                    <%= ebay_fields.label :listing_duration, "Listing Duration", class: "form-label" %>
+                    <%= ebay_fields.select :listing_duration, 
+                        [
+                          ["Good 'Til Cancelled", "GTC"],
+                          ["1 Day", "Days_1"],
+                          ["3 Days", "Days_3"],
+                          ["5 Days", "Days_5"],
+                          ["7 Days", "Days_7"],
+                          ["10 Days", "Days_10"],
+                          ["30 Days", "Days_30"]
+                        ], 
+                        { include_blank: "Select Duration" }, 
+                        { class: "form-select" } 
+                    %>
+                  <% end %>
+                </div>
+              </div>
+            </div>
+            
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
+                    <%= ebay_fields.label :shipping_profile_id, "Shipping Profile", class: "form-label" %>
+                    <%= ebay_fields.select :shipping_profile_id, 
+                        current_shop.shopify_ebay_account&.shipping_profiles&.map { |p| [p["profileName"], p["profileId"]] } || [], 
+                        { include_blank: "Select Shipping Profile" }, 
+                        { class: "form-select" } 
+                    %>
+                  <% end %>
+                </div>
+              </div>
+            </div>
+            
+            <div class="row mb-3">
+              <div class="col-md-12">
+                <div class="form-group">
+                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
+                    <%= ebay_fields.label :condition_description, "Condition Description", class: "form-label" %>
+                    <%= ebay_fields.text_area :condition_description, class: "form-control", rows: 3 %>
+                    <small class="form-text text-muted">Provide details about the condition of your item</small>
+                  <% end %>
+                </div>
+              </div>
+            </div>
+            
+            <div class="row mb-3">
+              <div class="col-md-12">
+                <div class="form-check form-switch">
+                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
+                    <%= ebay_fields.check_box :best_offer_enabled, class: "form-check-input", role: "switch" %>
+                    <%= ebay_fields.label :best_offer_enabled, "Enable Best Offer", class: "form-check-label" %>
+                  <% end %>
                 </div>
               </div>
             </div>
           </div>
         </div>
-
-        <div class="row mb-3">
-          <div class="col-md-6">
-            <div class="form-group">
-              <%= form.label :title, class: "form-label" %>
-              <%= form.text_field :title, class: "form-control", required: true %>
-              <div class="invalid-feedback">Title is required</div>
-            </div>
-          </div>
-          <div class="col-md-6">
-            <div class="form-group">
-              <%= form.label :sku, "SKU", class: "form-label" %>
-              <%= form.text_field :sku, class: "form-control" %>
-              <small class="form-text text-muted">Unique identifier for your product</small>
-            </div>
-          </div>
-        </div>
-
-        <div class="row mb-3">
-          <div class="col-md-12">
-            <div class="form-group">
-              <%= form.label :description, class: "form-label" %>
-              <%= form.text_area :description, class: "form-control", rows: 4 %>
-            </div>
-          </div>
-        </div>
-
-        <div class="row mb-3">
-          <div class="col-md-4">
-            <div class="form-group">
-              <%= form.label :base_price, "Price", class: "form-label" %>
-              <div class="input-group">
-                <span class="input-group-text">$</span>
-                <%= form.number_field :base_price, class: "form-control", step: "0.01", min: "0" %>
-              </div>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="form-group">
-              <%= form.label :base_quantity, "Quantity", class: "form-label" %>
-              <%= form.number_field :base_quantity, class: "form-control", min: "0", required: true %>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="form-group">
-              <%= form.label :weight_oz, "Weight (oz)", class: "form-label" %>
-              <%= form.number_field :weight_oz, class: "form-control", step: "0.01", min: "0" %>
-              <small class="form-text text-muted">Weight in ounces</small>
-            </div>
-          </div>
-        </div>
-
-        <div class="row mb-3">
-          <div class="col-md-4">
-            <div class="form-group">
-              <%= form.label :brand, class: "form-label" %>
-              <%= form.text_field :brand, class: "form-control" %>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="form-group">
-              <%= form.label :condition, class: "form-label" %>
-              <%= form.select :condition, 
-                  [
-                    ["New", "New"], 
-                    ["Used - Like New", "Used - Like New"],
-                    ["Used - Very Good", "Used - Very Good"],
-                    ["Used - Good", "Used - Good"],
-                    ["Used - Acceptable", "Used - Acceptable"],
-                    ["For Parts or Not Working", "For Parts or Not Working"]
-                  ], 
-                  { include_blank: "Select Condition" }, 
-                  { class: "form-select" } 
-              %>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="form-group">
-              <%= form.label :location, class: "form-label" %>
-              <%= form.text_field :location, class: "form-control" %>
-              <small class="form-text text-muted">Storage location (e.g., "Shelf A3")</small>
-            </div>
-          </div>
-        </div>
-
-        <div class="row mb-3">
-          <div class="col-md-12">
-            <div class="form-group">
-              <%= form.label :tags, class: "form-label" %>
-              <%= form.text_field :tags, class: "form-control", placeholder: "Enter tags separated by commas" %>
-              <small class="form-text text-muted">Tags help categorize your products (e.g., "electronics, vintage, sale")</small>
-            </div>
-          </div>
-        </div>
-
-        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+        
+        <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
           <%= link_to "Cancel", kuralis_products_path, class: "btn btn-outline-secondary me-md-2" %>
           <%= form.submit "Create Product", class: "btn btn-primary" %>
         </div>

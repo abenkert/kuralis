@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_03_06_163237) do
+ActiveRecord::Schema[8.0].define(version: 2025_03_07_013637) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -40,6 +40,23 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_06_163237) do
     t.bigint "blob_id", null: false
     t.string "variation_digest", null: false
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
+  end
+
+  create_table "ebay_categories", force: :cascade do |t|
+    t.string "category_id", null: false
+    t.string "name", null: false
+    t.string "parent_id"
+    t.integer "level", default: 1, null: false
+    t.boolean "leaf", default: false, null: false
+    t.string "marketplace_id", default: "EBAY_US", null: false
+    t.jsonb "metadata", default: {}
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["category_id"], name: "index_ebay_categories_on_category_id"
+    t.index ["marketplace_id", "category_id"], name: "index_ebay_categories_on_marketplace_id_and_category_id", unique: true
+    t.index ["marketplace_id", "parent_id"], name: "index_ebay_categories_on_marketplace_id_and_parent_id"
+    t.index ["name"], name: "index_ebay_categories_on_name"
+    t.index ["parent_id"], name: "index_ebay_categories_on_parent_id"
   end
 
   create_table "ebay_listings", force: :cascade do |t|

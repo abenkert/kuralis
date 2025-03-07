@@ -10,6 +10,7 @@ module Kuralis
 
     def new
       @product = KuralisProduct.new
+      @product.build_ebay_product_attribute
     end
 
     def create
@@ -122,7 +123,17 @@ module Kuralis
         :weight_oz,
         images: [], 
         tags: [], 
-        product_attributes: {}
+        product_attributes: {},
+        ebay_product_attribute_attributes: [
+          :id,
+          :category_id,
+          :store_category_id,
+          :condition_id,
+          :condition_description,
+          :listing_duration,
+          :shipping_profile_id,
+          :best_offer_enabled
+        ]
       )
     end
   end

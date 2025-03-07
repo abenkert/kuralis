@@ -4,6 +4,7 @@ class KuralisProduct < ApplicationRecord
   belongs_to :ebay_listing, optional: true
   has_many_attached :images
   has_one :ebay_product_attribute, dependent: :destroy
+  accepts_nested_attributes_for :ebay_product_attribute, reject_if: :all_blank
 
   validates :title, presence: true
   validates :base_price, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true

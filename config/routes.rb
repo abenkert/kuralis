@@ -36,6 +36,10 @@ Rails.application.routes.draw do
   get 'settings', to: 'settings#index', as: :settings
 
   namespace :kuralis do
+    get "ebay_categories/search"
+    post "ebay_categories/import"
+    resources :ebay_categories, only: [:index]
+    
     resources :products, only: [:index, :new, :create, :destroy] do
       collection do
         post :bulk_action
