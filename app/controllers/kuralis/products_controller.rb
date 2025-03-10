@@ -5,22 +5,91 @@ module Kuralis
     def index
       @filter = params[:filter] || 'all'
       @collector = Kuralis::Collector.new(current_shop.id, params).gather_data
-      @products = @collector.products
+      
+      # Add filtering for draft products
+      if @filter == 'draft'
+        @products = current_shop.kuralis_products.draft.order(created_at: :desc).page(params[:page]).per(20)
+      else
+        @products = @collector.products
+      end
     end
 
     def new
-      @product = KuralisProduct.new
-      @product.build_ebay_product_attribute
+      # Check if we're editing a draft product
+      if params[:draft_id].present?
+        @product = current_shop.kuralis_products.draft.find(params[:draft_id])
+        @editing_draft = true
+      else
+        @product = KuralisProduct.new
+        @product.build_ebay_product_attribute
+      end
     end
 
     def create
       @product = current_shop.kuralis_products.new(product_params)
       @product.source_platform = 'manual'
       
-      if @product.save
-        redirect_to kuralis_products_path, notice: "Product was successfully created."
+      # If this was a draft product, mark it as finalized
+      if params[:draft_id].present?
+        draft = current_shop.kuralis_products.draft.find(params[:draft_id])
+        @product.ai_product_analysis_id = draft.ai_product_analysis_id
+        
+        # Copy over images if the new product doesn't have any
+        if !@product.images.attached? && draft.images.attached?
+          draft.images.each do |image|
+            @product.images.attach(image.blob)
+          end
+        end
+        
+        # Delete the draft if successful
+        if @product.save
+          draft.destroy
+          redirect_to kuralis_products_path, notice: "Product was successfully created from draft."
+        else
+          render :new, status: :unprocessable_entity
+        end
       else
-        render :new, status: :unprocessable_entity
+        # Normal product creation flow
+        if @product.save
+          redirect_to kuralis_products_path, notice: "Product was successfully created."
+        else
+          render :new, status: :unprocessable_entity
+        end
+      end
+    end
+
+    def edit
+      @product = current_shop.kuralis_products.find(params[:id])
+      @product.build_ebay_product_attribute unless @product.ebay_product_attribute
+    end
+
+    def update
+      @product = current_shop.kuralis_products.find(params[:id])
+      
+      # Handle image deletion
+      if params[:kuralis_product] && params[:kuralis_product][:images_to_delete].present?
+        params[:kuralis_product][:images_to_delete].each do |image_id|
+          image = @product.images.find_by(id: image_id)
+          image.purge if image
+        end
+      end
+      
+      # If updating a draft, mark it as finalized
+      if @product.draft? && params[:finalize] == 'true'
+        @product.assign_attributes(product_params)
+        @product.is_draft = false
+        
+        if @product.save
+          redirect_to kuralis_products_path, notice: "Draft product was successfully finalized."
+        else
+          render :edit, status: :unprocessable_entity
+        end
+      else
+        if @product.update(product_params)
+          redirect_to kuralis_products_path, notice: "Product was successfully updated."
+        else
+          render :edit, status: :unprocessable_entity
+        end
       end
     end
 
@@ -100,7 +169,7 @@ module Kuralis
         respond_to do |format|
           format.html { redirect_to kuralis_products_path, alert: "Failed to delete product." }
           format.json { render json: @product.errors, status: :unprocessable_entity }
-          format.turbo_stream {
+          format.turbo_stream { 
             flash.now[:alert] = "Failed to delete product."
             render turbo_stream: turbo_stream.prepend("flash", partial: "shared/flash")
           }
@@ -108,18 +177,68 @@ module Kuralis
       end
     end
 
-    # GET /kuralis/products/bulk_ai_creation
     def bulk_ai_creation
-      @pending_analyses = current_shop.ai_product_analyses.pending.recent.limit(10)
-      @processing_analyses = current_shop.ai_product_analyses.processing.recent.limit(10)
-      @ready_analyses = current_shop.ai_product_analyses.ready_for_products.recent.limit(10)
-      @processed_analyses = current_shop.ai_product_analyses.processed.completed.recent.limit(10)
-      @failed_analyses = current_shop.ai_product_analyses.failed.recent.limit(10)
-      
-      # Combine all analyses for the view
-      @analyses = (@ready_analyses + @pending_analyses + @processing_analyses + @failed_analyses).sort_by(&:created_at).reverse
+      @pending_analyses = current_shop.ai_product_analyses.pending&.limit(10)
+      @processing_analyses = current_shop.ai_product_analyses.processing&.limit(10)
+      @completed_analyses = current_shop.ai_product_analyses.completed.unprocessed&.limit(20)
+      @draft_products = current_shop.kuralis_products.draft&.limit(20)
     end
     
+    # GET /kuralis/products/ai_analysis_status
+    def ai_analysis_status
+      analysis = current_shop.ai_product_analyses.find(params[:analysis_id])
+      
+      render json: analysis.as_json_with_details
+    end
+    
+    # GET /kuralis/products/create_product_from_ai
+    def create_product_from_ai
+      analysis = current_shop.ai_product_analyses.find(params[:analysis_id])
+      
+      unless analysis.completed?
+        respond_to do |format|
+          format.html { redirect_to bulk_ai_creation_kuralis_products_path, alert: "Analysis is not yet complete." }
+          format.json { render json: { error: "Analysis not complete" }, status: :unprocessable_entity }
+        end
+        return
+      end
+      
+      # Check if a draft product already exists for this analysis
+      existing_product = KuralisProduct.find_by(ai_product_analysis_id: analysis.id, is_draft: true)
+      if existing_product.present?
+        # Redirect to edit the existing draft product
+        respond_to do |format|
+          format.html { redirect_to edit_kuralis_product_path(existing_product, finalize: true), notice: "Editing existing draft product." }
+          format.json { render json: { redirect: edit_kuralis_product_path(existing_product, finalize: true) } }
+        end
+        return
+      end
+      
+      # Create a draft product from the analysis
+      draft_product = KuralisProduct.create_from_ai_analysis(analysis, current_shop)
+      
+      if draft_product.persisted?
+        # Redirect to edit the draft product
+        respond_to do |format|
+          format.html { redirect_to edit_kuralis_product_path(draft_product, finalize: true), notice: "Draft product created. Please review and finalize it." }
+          format.json { render json: { redirect: edit_kuralis_product_path(draft_product, finalize: true) } }
+        end
+      else
+        error_messages = draft_product.errors.full_messages
+        
+        # If draft_product has an ebay_product_attribute, include its errors too
+        if draft_product.ebay_product_attribute&.errors&.any?
+          error_messages += draft_product.ebay_product_attribute.errors.full_messages
+        end
+        
+        # Handle failure
+        respond_to do |format|
+          format.html { redirect_to bulk_ai_creation_kuralis_products_path, alert: "Failed to create draft product: #{error_messages.join(', ')}" }
+          format.json { render json: { error: error_messages }, status: :unprocessable_entity }
+        end
+      end
+    end
+
     # POST /kuralis/products/upload_images
     def upload_images
       Rails.logger.debug "Upload images params: #{params.inspect}"
@@ -246,48 +365,6 @@ module Kuralis
         end
       end
     end
-    
-    # GET /kuralis/products/ai_analysis_status
-    def ai_analysis_status
-      analysis = current_shop.ai_product_analyses.find(params[:analysis_id])
-      
-      render json: analysis.as_json_with_details
-    end
-    
-    # GET /kuralis/products/create_product_from_ai
-    def create_product_from_ai
-      analysis = current_shop.ai_product_analyses.find(params[:analysis_id])
-      
-      unless analysis.completed?
-        respond_to do |format|
-          format.html { redirect_to bulk_ai_creation_kuralis_products_path, alert: "Analysis is not yet complete." }
-          format.json { render json: { error: "Analysis not complete" }, status: :unprocessable_entity }
-        end
-        return
-      end
-      
-      # Pre-populate the new product form with AI results
-      @product = KuralisProduct.new(
-        title: analysis.suggested_title,
-        description: analysis.suggested_description,
-        brand: analysis.suggested_brand,
-        condition: analysis.suggested_condition
-      )
-      
-      # If there's an eBay product attribute, pre-populate it
-      @product.build_ebay_product_attribute(
-        category_id: analysis.suggested_ebay_category,
-        item_specifics: analysis.suggested_item_specifics
-      )
-      
-      # Mark the analysis as processed
-      analysis.mark_as_processed!
-      
-      # Attach the image to the new product
-      @product.images.attach(analysis.image_attachment.blob) if analysis.image_attachment.attached?
-      
-      render :new
-    end
 
     private
 
@@ -302,17 +379,20 @@ module Kuralis
         :condition, 
         :location, 
         :weight_oz,
+        :is_draft,
+        :ai_product_analysis_id,
         images: [], 
+        images_to_delete: [],
         tags: [], 
         product_attributes: {},
         ebay_product_attribute_attributes: [
           :id,
-          :category_id,
-          :store_category_id,
           :condition_id,
           :condition_description,
-          :listing_duration,
+          :category_id,
+          :store_category_id,
           :shipping_profile_id,
+          :listing_duration,
           :best_offer_enabled,
           item_specifics: {}
         ]

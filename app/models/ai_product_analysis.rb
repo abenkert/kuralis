@@ -1,6 +1,7 @@
 class AiProductAnalysis < ApplicationRecord
   belongs_to :shop
   has_one_attached :image_attachment
+  has_one :kuralis_product, dependent: :nullify
   
   # Validations
   validates :image, presence: true
@@ -15,6 +16,11 @@ class AiProductAnalysis < ApplicationRecord
   scope :processed, -> { where(processed: true) }
   scope :recent, -> { order(created_at: :desc) }
   scope :ready_for_products, -> { completed.unprocessed }
+  scope :with_draft_product, -> { joins(:kuralis_product).where(kuralis_products: { is_draft: true }) }
+  scope :without_draft_product, -> { 
+    left_joins(:kuralis_product)
+      .where("kuralis_products.id IS NULL OR kuralis_products.is_draft = ?", false)
+  }
   
   # Virtual attribute for error message
   attr_accessor :error_message
@@ -34,6 +40,15 @@ class AiProductAnalysis < ApplicationRecord
   
   def failed?
     status == 'failed'
+  end
+  
+  def has_draft_product?
+    # Check if there's an associated kuralis_product that is a draft
+    kuralis_product.present? && kuralis_product.draft?
+  rescue => e
+    # Log any errors and return false
+    Rails.logger.error "Error checking for draft product: #{e.message}"
+    false
   end
   
   def mark_as_processing!

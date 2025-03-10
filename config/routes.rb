@@ -44,7 +44,7 @@ Rails.application.routes.draw do
       end
     end
     
-    resources :products, only: [:index, :new, :create, :destroy] do
+    resources :products, only: [:index, :new, :create, :edit, :update, :destroy] do
       collection do
         post :bulk_action
         get :bulk_listing

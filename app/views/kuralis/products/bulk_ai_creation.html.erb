@@ -61,7 +61,8 @@
             <ol class="small text-muted">
               <li>Upload one or more product images</li>
               <li>Our AI will analyze each image and extract product details</li>
-              <li>Review the AI suggestions and create products with pre-filled information</li>
+              <li>Review the AI suggestions and create draft products</li>
+              <li>Finalize draft products by editing and confirming details</li>
             </ol>
           </div>
           
@@ -89,12 +90,158 @@
     <!-- Analysis Results Section -->
     <div class="col-md-7">
       <div class="card shadow mb-4">
-        <div class="card-header py-3 d-flex justify-content-between align-items-center">
-          <h6 class="m-0 font-weight-bold text-primary">Image Analysis Results</h6>
+        <div class="card-header py-3">
+          <ul class="nav nav-tabs card-header-tabs" id="analysisTab" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="analyses-tab" data-bs-toggle="tab" data-bs-target="#analyses" type="button" role="tab" aria-controls="analyses" aria-selected="true">
+                <i class="fas fa-spinner me-1"></i> Pending Analyses
+                <% if @pending_analyses.any? || @processing_analyses.any? %>
+                  <span class="badge bg-primary ms-1"><%= @pending_analyses.count + @processing_analyses.count %></span>
+                <% end %>
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="completed-tab" data-bs-toggle="tab" data-bs-target="#completed" type="button" role="tab" aria-controls="completed" aria-selected="false">
+                <i class="fas fa-check-circle me-1"></i> Completed Analyses
+                <% if @completed_analyses.any? %>
+                  <span class="badge bg-success ms-1"><%= @completed_analyses.count %></span>
+                <% end %>
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="drafts-tab" data-bs-toggle="tab" data-bs-target="#drafts" type="button" role="tab" aria-controls="drafts" aria-selected="false">
+                <i class="fas fa-pencil-alt me-1"></i> Draft Products
+                <% if @draft_products.any? %>
+                  <span class="badge bg-warning ms-1"><%= @draft_products.count %></span>
+                <% end %>
+              </button>
+            </li>
+          </ul>
         </div>
         <div class="card-body">
-          <div id="ai_analyses">
-            <%= render partial: "kuralis/products/ai_analyses", locals: { analyses: @analyses } %>
+          <div class="tab-content" id="analysisTabContent">
+            <!-- Pending Analyses Tab -->
+            <div class="tab-pane fade show active" id="analyses" role="tabpanel" aria-labelledby="analyses-tab">
+              <% if @pending_analyses.any? || @processing_analyses.any? %>
+                <div id="ai_analyses" class="row">
+                  <% (@pending_analyses + @processing_analyses).each do |analysis| %>
+                    <%= render partial: "kuralis/products/ai_analysis_item", locals: { analysis: analysis } %>
+                  <% end %>
+                </div>
+              <% else %>
+                <div class="text-center py-5">
+                  <i class="fas fa-images fa-3x text-muted mb-3"></i>
+                  <p class="mb-0">No pending analyses at the moment.</p>
+                  <p class="text-muted">Upload images to begin the AI analysis process.</p>
+                </div>
+              <% end %>
+            </div>
+            
+            <!-- Completed Analyses Tab -->
+            <div class="tab-pane fade" id="completed" role="tabpanel" aria-labelledby="completed-tab">
+              <% if @completed_analyses.any? %>
+                <div class="row">
+                  <% @completed_analyses.each do |analysis| %>
+                    <div class="col-md-6 mb-4" id="analysis_<%= analysis.id %>">
+                      <div class="analysis-item position-relative">
+                        <% if analysis.image_attachment.attached? %>
+                          <%= image_tag url_for(analysis.image_attachment), class: "analysis-image" %>
+                        <% else %>
+                          <div class="analysis-image bg-light d-flex align-items-center justify-content-center">
+                            <i class="fas fa-image fa-3x text-muted"></i>
+                          </div>
+                        <% end %>
+                        <div class="analysis-status status-completed">
+                          Completed
+                        </div>
+                        <div class="p-3">
+                          <h6 class="mb-2 font-weight-bold">
+                            <%= analysis.suggested_title.presence || "Untitled Product" %>
+                          </h6>
+                          <p class="small text-muted mb-2">
+                            <%= truncate(analysis.suggested_description.presence || "No description available", length: 100) %>
+                          </p>
+                          <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                              <span class="badge bg-info me-1"><%= analysis.suggested_brand %></span>
+                              <% if analysis.suggested_price.present? %>
+                                <span class="badge bg-success"><%= number_to_currency(analysis.suggested_price) %></span>
+                              <% end %>
+                            </div>
+                            <div class="btn-group">
+                              <%= link_to create_product_from_ai_kuralis_products_path(analysis_id: analysis.id), 
+                                  class: "btn btn-sm btn-primary", 
+                                  data: { turbo_method: :get } do %>
+                                <i class="fas fa-plus me-1"></i> Create Draft
+                              <% end %>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  <% end %>
+                </div>
+              <% else %>
+                <div class="text-center py-5">
+                  <i class="fas fa-check-circle fa-3x text-muted mb-3"></i>
+                  <p class="mb-0">No completed analyses waiting for review.</p>
+                </div>
+              <% end %>
+            </div>
+            
+            <!-- Draft Products Tab -->
+            <div class="tab-pane fade" id="drafts" role="tabpanel" aria-labelledby="drafts-tab">
+              <% if @draft_products.any? %>
+                <div class="row">
+                  <% @draft_products.each do |product| %>
+                    <div class="col-md-6 mb-4" id="draft_product_<%= product.id %>">
+                      <div class="analysis-item position-relative">
+                        <% if product.images.attached? %>
+                          <%= image_tag url_for(product.images.first), class: "analysis-image" %>
+                        <% else %>
+                          <div class="analysis-image bg-light d-flex align-items-center justify-content-center">
+                            <i class="fas fa-image fa-3x text-muted"></i>
+                          </div>
+                        <% end %>
+                        <div class="analysis-status bg-warning text-dark">
+                          Draft
+                        </div>
+                        <div class="p-3">
+                          <h6 class="mb-2 font-weight-bold">
+                            <%= product.title %>
+                          </h6>
+                          <p class="small text-muted mb-2">
+                            <%= truncate(product.description.presence || "No description available", length: 100) %>
+                          </p>
+                          <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                              <% if product.brand.present? %>
+                                <span class="badge bg-info me-1"><%= product.brand %></span>
+                              <% end %>
+                              <% if product.base_price.present? %>
+                                <span class="badge bg-success"><%= number_to_currency(product.base_price) %></span>
+                              <% end %>
+                            </div>
+                            <div>
+                              <%= link_to edit_kuralis_product_path(product, finalize: true), 
+                                  class: "btn btn-sm btn-warning" do %>
+                                <i class="fas fa-edit me-1"></i> Edit & Finalize
+                              <% end %>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  <% end %>
+                </div>
+              <% else %>
+                <div class="text-center py-5">
+                  <i class="fas fa-pencil-alt fa-3x text-muted mb-3"></i>
+                  <p class="mb-0">No draft products available.</p>
+                  <p class="text-muted">Create drafts from completed analyses to see them here.</p>
+                </div>
+              <% end %>
+            </div>
           </div>
         </div>
       </div>

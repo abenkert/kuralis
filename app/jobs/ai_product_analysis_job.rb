@@ -1,50 +1,55 @@
 class AiProductAnalysisJob < ApplicationJob
+  require 'base64'
+  
   queue_as :default
   
   retry_on StandardError, attempts: 3, wait: 5.seconds
 
   def perform(shop_id, analysis_id)
     analysis = AiProductAnalysis.find_by(id: analysis_id)
-    return unless analysis
     
-    Rails.logger.info "Starting AI analysis job for analysis ##{analysis_id}"
+    # Exit early if analysis record not found
+    unless analysis
+      Rails.logger.error "Analysis record not found (ID: #{analysis_id})"
+      return
+    end
+    
+    # Update status to processing
+    analysis.mark_as_processing!
+    
+    # Broadcast status update
+    broadcast_update(analysis)
     
     begin
-      # Update status to processing
-      analysis.update(status: "processing")
-      Rails.logger.info "Analysis ##{analysis_id} marked as processing"
-      
-      # Download the image for processing
-      image_data = nil
+      # Get the attached image
       if analysis.image_attachment.attached?
-        Rails.logger.info "Image attachment found for analysis ##{analysis_id}, downloading..."
+        # Download the image data
         image_data = analysis.image_attachment.download
-        Rails.logger.info "Image downloaded successfully (#{image_data.bytesize} bytes)"
+        
+        # Get the filename
+        filename = analysis.image_attachment.filename.to_s
+        
+        # Analyze the image
+        results = analyze_image(image_data, filename)
+        
+        # Mark as completed with results
+        if results.key?(:error)
+          analysis.mark_as_failed!(results[:error])
+        else
+          analysis.mark_as_completed!(results)
+        end
       else
-        Rails.logger.error "No image attached for analysis ##{analysis_id}"
-        analysis.update(status: "failed", error_message: "No image attached")
-        return
+        # No image attached, mark as failed
+        analysis.mark_as_failed!("No image attached to analysis")
       end
       
-      # Call the AI service to analyze the image
-      Rails.logger.info "Starting AI analysis for image ##{analysis_id}"
-      results = analyze_image(image_data, analysis.image)
-      Rails.logger.info "AI analysis completed successfully for ##{analysis_id}"
-      
-      # Update the analysis with the results
-      analysis.update(
-        status: "completed",
-        results: results
-      )
-      Rails.logger.info "Analysis ##{analysis_id} marked as completed with results"
-      
-      # Broadcast an update to any listening clients
+      # Broadcast the update
       broadcast_update(analysis)
     rescue => e
-      # Handle errors
-      Rails.logger.error "Error analyzing image ##{analysis_id}: #{e.message}"
+      Rails.logger.error "Error in AI analysis job: #{e.message}"
       Rails.logger.error e.backtrace.join("\n")
       
+      # Mark as failed with error message
       analysis.update(
         status: "failed",
         error_message: "Error analyzing image: #{e.message}"
@@ -58,36 +63,204 @@ class AiProductAnalysisJob < ApplicationJob
   private
   
   def analyze_image(image_data, filename)
-    # This is a placeholder for the actual AI analysis
-    # In a real implementation, this would call an AI service API
-    Rails.logger.info "Analyzing image: #{filename}"
+    # Call OpenAI API to analyze the image using the OpenAI Vision API
+    begin
+      # Encode image for API request
+      base64_image = Base64.strict_encode64(image_data)
+      
+      # Call OpenAI Vision API
+      response = call_openai_api(base64_image)
+      
+      # Process OpenAI response
+      process_openai_response(response, filename)
+    rescue => e
+      Rails.logger.error "Error calling OpenAI API: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      return { error: "Failed to analyze image: #{e.message}" }
+    end
+  end
+  
+  def call_openai_api(base64_image)
+    # Get the OpenAI service from your existing implementation
+    openai_service = Ai::OpenaiService.new(
+      model: "gpt-4o-2024-11-20",
+      temperature: 0.2,
+      max_tokens: 10000
+    )
     
-    # Simulate processing time (shorter for testing)
-    sleep(2)
+    # Construct the prompt for better structured results
+    prompt = "Analyze this product image and provide detailed information. Return a JSON object with the following fields:\n\n" \
+             "- title: Product title\n" \
+             "- description: Detailed product description\n" \
+             "- brand: Brand name if visible\n" \
+             "- ebay_category_path: Full eBay category path (e.g., 'Collectibles > Comic Books & Memorabilia > Comics > Comics & Graphic Novels')\n" \
+             "- item_specifics: A JSON object with key-value pairs of important product attributes\n" \
+             "- tags: Array of relevant tags for the product\n\n" \
+             "If you cannot determine some fields, use null values. For item_specifics, provide as many relevant details as possible based on the product image these should be specific to the ebay category."
     
-    # For comic books, generate more specific results
-    if filename.to_s.downcase.include?('comic')
-      # Return comic book specific results
-      return {
-        "title" => "Comic Book - #{random_comic_title}",
-        "description" => random_comic_description,
-        "price" => format('%.2f', rand(5.99..299.99)),
-        "condition" => random_condition,
-        "publisher" => random_publisher,
-        "year" => rand(1960..2023).to_s,
-        "issue_number" => "##{rand(1..500)}",
-        "tags" => ["comic", "collectible", random_comic_genre]
+    # Since the OpenAI service doesn't have a specific vision method,
+    # we'll use chat_with_history and construct the messages with the image
+    messages = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          {
+            type: "image_url",
+            image_url: {
+              url: "data:image/jpeg;base64,#{base64_image}",
+              detail: "high"
+            }
+          }
+        ]
       }
+    ]
+    
+    # Make a direct API call since our service wrapper doesn't support images yet
+    client = openai_service.client
+    
+    response = client.chat(
+      parameters: {
+        model: "gpt-4o-2024-11-20",
+        messages: messages,
+        max_tokens: 10000,
+        temperature: 0.2
+      }
+    )
+    
+    # Check for errors
+    if response["error"]
+      Rails.logger.error "OpenAI API error: #{response["error"]["message"]}"
+      raise "OpenAI API returned error: #{response["error"]["message"]}"
+    end
+    
+    response
+  end
+  
+  def process_openai_response(response, filename)
+    # Extract the content from OpenAI response
+    content = response.dig('choices', 0, 'message', 'content')
+    
+    if content.blank?
+      Rails.logger.error "Empty response from OpenAI"
+      return { error: "Empty response from image analysis" }
+    end
+    
+    # Try to extract JSON from the content (OpenAI might wrap it in markdown code blocks)
+    json_match = content.match(/```json\n(.*?)\n```/m) || content.match(/```\n(.*?)\n```/m)
+    
+    if json_match
+      json_content = json_match[1]
     else
-      # Return more generic product results
-      return {
-        "title" => random_product_title,
-        "description" => random_product_description,
-        "price" => format('%.2f', rand(5.99..199.99)),
-        "condition" => random_condition,
-        "brand" => random_brand,
-        "tags" => ["product", random_product_category]
-      }
+      # If no code block, try to use the entire content
+      json_content = content
+    end
+    
+    begin
+      data = JSON.parse(json_content)
+    rescue JSON::ParserError => e
+      Rails.logger.error "Failed to parse OpenAI JSON response: #{e.message}"
+      Rails.logger.error "Raw content: #{content}"
+      
+      # Fall back to simpler parsing approach - try to extract key-value pairs
+      data = extract_data_from_text(content)
+    end
+    
+    # Process eBay category path to find category ID if possible
+    if data["ebay_category_path"].present?
+      data["ebay_category"] = find_ebay_category_id(data["ebay_category_path"])
+    end
+    
+    # Ensure all expected fields are present
+    result = {
+      "title" => data["title"],
+      "description" => data["description"],
+      "brand" => data["brand"],
+      "category" => data["category"],
+      "ebay_category" => data["ebay_category"],
+      "item_specifics" => data["item_specifics"] || {},
+      "tags" => data["tags"] || []
+    }
+    
+    # Log the result for debugging
+    Rails.logger.info "Analyzed image results: #{result.to_json}"
+    
+    result
+  end
+  
+  def extract_data_from_text(content)
+    # Fallback method to extract data if JSON parsing fails
+    data = {}
+    
+    # Look for key patterns like "title: Product name"
+    patterns = {
+      "title" => /title:?\s*(.+?)(?:\n|$)/i,
+      "description" => /description:?\s*(.+?)(?:\n|$)/i,
+      "brand" => /brand:?\s*(.+?)(?:\n|$)/i,
+      "ebay_category_path" => /ebay[_\s]category[_\s]path:?\s*(.+?)(?:\n|$)/i
+    }
+    
+    patterns.each do |key, pattern|
+      if match = content.match(pattern)
+        data[key] = match[1].strip
+      end
+    end
+    
+    # Try to extract item specifics
+    item_specifics_section = content.match(/item[_\s]specifics:?\s*\{(.+?)\}/m)
+    if item_specifics_section
+      data["item_specifics"] = {}
+      item_specifics_text = item_specifics_section[1]
+      
+      # Extract key-value pairs
+      item_specifics_text.scan(/"([^"]+)":\s*"([^"]+)"/).each do |key, value|
+        data["item_specifics"][key] = value
+      end
+    end
+    
+    # Try to extract tags
+    tags_section = content.match(/tags:?\s*\[(.+?)\]/m)
+    if tags_section
+      tags_text = tags_section[1]
+      data["tags"] = tags_text.scan(/"([^"]+)"/).flatten
+    end
+    
+    data
+  end
+  
+  def find_ebay_category_id(category_path)
+    # This is a placeholder for a more sophisticated category lookup
+    # In a real implementation, you might:
+    # 1. Search your local database of eBay categories
+    # 2. Call eBay API to search for matching categories
+    # 3. Have a mapping table from common paths to category IDs
+    
+    begin
+      # Try to find the category in the database
+      # Example (depends on your actual database structure):
+      category_terms = category_path.split(' > ').last(2)
+      
+      if category_terms.any?
+        # Search for matching category by name
+        category = EbayCategory.where('name ILIKE ?', "%#{category_terms.last}%").first
+        
+        if category
+          return category.category_id
+        else
+          # More specific search if needed
+          category_terms.each do |term|
+            category = EbayCategory.where('name ILIKE ?', "%#{term}%").first
+            return category.category_id if category
+          end
+        end
+      end
+      
+      # If we couldn't find a matching category, return nil
+      # The user will need to select a category manually
+      return nil
+    rescue => e
+      Rails.logger.error "Error finding eBay category: #{e.message}"
+      return nil
     end
   end
   
@@ -105,61 +278,5 @@ class AiProductAnalysisJob < ApplicationJob
     )
   rescue => e
     Rails.logger.error "Failed to broadcast update: #{e.message}"
-  end
-  
-  # Helper methods to generate random data for the demo
-  def random_comic_title
-    [
-      "Amazing Adventures", "Fantastic Tales", "Incredible Heroes",
-      "Spectacular Stories", "Uncanny Chronicles", "Marvelous Mysteries",
-      "Ultimate Legends", "Daring Exploits"
-    ].sample
-  end
-  
-  def random_comic_description
-    [
-      "A rare issue in excellent condition. Features the first appearance of a major character.",
-      "Classic cover art by a renowned artist. Story focuses on an epic battle between heroes and villains.",
-      "Limited edition variant cover. Contains a pivotal story arc that changed the series.",
-      "Special anniversary issue with bonus content. Includes origin story and character development.",
-      "Mint condition comic with original inserts intact. Key issue in the storyline."
-    ].sample
-  end
-  
-  def random_comic_genre
-    ["superhero", "horror", "sci-fi", "fantasy", "action", "adventure"].sample
-  end
-  
-  def random_publisher
-    ["Marvel", "DC", "Image", "Dark Horse", "IDW", "Vertigo", "Boom! Studios"].sample
-  end
-  
-  def random_condition
-    ["Mint", "Near Mint", "Very Good", "Good", "Fair", "Poor"].sample
-  end
-  
-  def random_product_title
-    [
-      "Vintage Collection Item", "Collectible Figurine", "Limited Edition Print",
-      "Rare Trading Card", "Signature Series Model", "Commemorative Piece"
-    ].sample
-  end
-  
-  def random_product_description
-    [
-      "A beautiful addition to any collection. Features intricate details and quality craftsmanship.",
-      "Rare find in excellent condition. One of only a limited number produced.",
-      "Collectible item with certificate of authenticity. Shows minimal wear.",
-      "Premium quality collectible with display case included. Perfect for serious collectors.",
-      "Hard-to-find item with original packaging. A must-have for enthusiasts."
-    ].sample
-  end
-  
-  def random_product_category
-    ["collectible", "toy", "memorabilia", "art", "figurine", "model"].sample
-  end
-  
-  def random_brand
-    ["Hasbro", "Funko", "Mattel", "McFarlane Toys", "NECA", "Diamond Select"].sample
   end
 end 

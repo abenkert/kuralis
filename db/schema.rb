@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_03_09_184142) do
+ActiveRecord::Schema[8.0].define(version: 2025_03_10_165840) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -173,7 +173,11 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_09_184142) do
     t.datetime "images_last_synced_at"
     t.decimal "weight_oz", precision: 8, scale: 2
     t.jsonb "tags", default: [], null: false
+    t.bigint "ai_product_analysis_id"
+    t.boolean "is_draft", default: false
+    t.index ["ai_product_analysis_id"], name: "index_kuralis_products_on_ai_product_analysis_id"
     t.index ["ebay_listing_id"], name: "index_kuralis_products_on_ebay_listing_id"
+    t.index ["is_draft"], name: "index_kuralis_products_on_is_draft"
     t.index ["shop_id"], name: "index_kuralis_products_on_shop_id"
     t.index ["shopify_product_id"], name: "index_kuralis_products_on_shopify_product_id"
     t.index ["sku"], name: "index_kuralis_products_on_sku"
@@ -331,6 +335,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_09_184142) do
   add_foreign_key "inventory_transactions", "order_items"
   add_foreign_key "inventory_transactions", "orders"
   add_foreign_key "job_runs", "shops"
+  add_foreign_key "kuralis_products", "ai_product_analyses"
   add_foreign_key "kuralis_products", "ebay_listings", on_delete: :nullify
   add_foreign_key "kuralis_products", "shopify_products", on_delete: :nullify
   add_foreign_key "kuralis_products", "shops"
