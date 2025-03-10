@@ -9,6 +9,46 @@
     </div>
   </div>
 
+  <% if @ai_assisted %>
+  <div class="alert alert-info mb-4">
+    <div class="d-flex align-items-center">
+      <i class="fas fa-robot me-2 fa-lg"></i>
+      <div>
+        <strong>AI-Assisted Creation</strong>
+        <p class="mb-0">This product was pre-filled using AI image analysis. Please review all details before saving, and don't forget to set your price.</p>
+      </div>
+    </div>
+  </div>
+  <% end %>
+
+  <!-- Hidden input for AI analysis ID -->
+  <% if @ai_assisted && @ai_analysis_id.present? %>
+    <%= hidden_field_tag :ai_analysis_id, @ai_analysis_id %>
+  <% end %>
+
+  <!-- Hidden elements for server-prepared data -->
+  <% if @ai_category_info.present? %>
+    <div id="server-category-data" 
+         data-category-id="<%= @ai_category_info[:id] %>"
+         data-category-name="<%= @ai_category_info[:name] %>"
+         data-category-path="<%= @ai_category_info[:full_path] %>"
+         style="display: none;"></div>
+  <% end %>
+
+  <% if @image_from_analysis.present? %>
+    <div id="server-image-data"
+         data-image-url="<%= @image_from_analysis[:url] %>"
+         data-image-filename="<%= @image_from_analysis[:filename] %>"
+         style="display: none;"></div>
+  <% end %>
+
+  <% if @item_specifics_json.present? %>
+    <script>
+      // Make item specifics available to JavaScript
+      window.serverPreparedItemSpecifics = <%= raw @item_specifics_json %>;
+    </script>
+  <% end %>
+
   <div class="card shadow mb-4">
     <div class="card-header py-3">
       <h6 class="m-0 font-weight-bold text-primary">Product Details</h6>
@@ -381,6 +421,29 @@
     const fileInput = document.getElementById('product_images');
     const previewContainer = document.getElementById('imagePreviewContainer');
     
+    // Server-prepared data
+    const serverCategoryData = document.getElementById('server-category-data');
+    const serverImageData = document.getElementById('server-image-data');
+    
+    // Initialize both at once - no need for a separate function
+    if (serverCategoryData) {
+      console.log("Server-prepared category data detected, initializing...");
+      setupCategoryFromServerData();
+    }
+    
+    if (serverImageData) {
+      console.log("Server-prepared image data detected, initializing...");
+      displayServerProvidedImage();
+    }
+    
+    // If we have AI data, switch to the eBay tab after a short delay
+    if (serverCategoryData || serverImageData) {
+      setTimeout(() => {
+        const ebayTab = document.getElementById('ebay-tab');
+        if (ebayTab) ebayTab.click();
+      }, 500);
+    }
+    
     // Form validation
     form.addEventListener('submit', function(event) {
       if (!form.checkValidity()) {
@@ -397,7 +460,6 @@
       form.addEventListener('submit', function() {
         const tagsValue = tagsInput.value;
         if (tagsValue) {
-          // This will be processed by strong parameters in the controller
           tagsInput.value = tagsValue.split(',').map(tag => tag.trim());
         }
       });
@@ -481,6 +543,239 @@
       }
       
       reader.readAsDataURL(file);
+    }
+    
+    // Function to display server-provided image in the form
+    function displayServerProvidedImage() {
+      if (!serverImageData) return;
+      
+      const imageUrl = serverImageData.dataset.imageUrl;
+      const imageFilename = serverImageData.dataset.imageFilename;
+      
+      if (!imageUrl) {
+        console.warn("No image URL provided in server data");
+        return;
+      }
+      
+      console.log("Creating image preview for:", imageUrl);
+      
+      // Create and display the image preview
+      const preview = document.createElement('div');
+      preview.className = 'image-preview-item';
+      
+      const img = document.createElement('img');
+      img.src = imageUrl;
+      
+      const removeBtn = document.createElement('div');
+      removeBtn.className = 'image-preview-remove';
+      removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+      removeBtn.addEventListener('click', function() {
+        preview.remove();
+      });
+      
+      preview.appendChild(img);
+      preview.appendChild(removeBtn);
+      previewContainer.appendChild(preview);
+      
+      // Create a hidden input to ensure the image is attached to the product
+      const hiddenImageInput = document.createElement('input');
+      hiddenImageInput.type = 'hidden';
+      hiddenImageInput.name = 'attach_analysis_image';
+      hiddenImageInput.value = 'true';
+      form.appendChild(hiddenImageInput);
+      
+      // Simplify the dropzone UI to show it's for additional images
+      const dropzoneContent = dropzone.querySelector('.dropzone-content');
+      if (dropzoneContent) {
+        dropzoneContent.innerHTML = `
+          <p class="mb-1 text-muted">Add more images (optional)</p>
+          <label for="product_images" class="btn btn-outline-primary btn-sm">
+            Browse Files
+          </label>
+        `;
+      }
+    }
+    
+    // Function to setup eBay category from server data
+    function setupCategoryFromServerData() {
+      if (!serverCategoryData) return;
+      
+      // Get category data from server
+      const categoryId = serverCategoryData.dataset.categoryId;
+      const categoryName = serverCategoryData.dataset.categoryName;
+      const categoryPath = serverCategoryData.dataset.categoryPath;
+      
+      if (!categoryId) {
+        console.warn("No category ID provided in server data");
+        return;
+      }
+      
+      console.log("Setting up eBay category:", { categoryId, categoryName, categoryPath });
+      
+      // Find the category selector element
+      const categorySelector = document.querySelector('[data-ebay-category-selector="true"]');
+      if (!categorySelector) {
+        console.error("Category selector element not found");
+        return;
+      }
+      
+      // Directly set the category without API calls since we already have all data from server
+      setCategory(categoryId, categoryName, categoryPath);
+      
+      // Function to set the category in the form
+      function setCategory(id, name, fullPath) {
+        console.log("Setting category:", id, name, fullPath);
+        
+        // Store the category ID in a hidden input
+        let hiddenCategoryInput = document.querySelector('input[name="kuralis_product[ebay_product_attribute_attributes][category_id]"][type="hidden"]');
+        
+        if (!hiddenCategoryInput) {
+          // Create a hidden input to store the real value
+          hiddenCategoryInput = document.createElement('input');
+          hiddenCategoryInput.type = 'hidden';
+          hiddenCategoryInput.name = 'kuralis_product[ebay_product_attribute_attributes][category_id]';
+          categorySelector.parentNode.appendChild(hiddenCategoryInput);
+        }
+        
+        // Set the category ID
+        hiddenCategoryInput.value = id;
+        
+        // Create or update the display element to show the selected category
+        let displayElement = categorySelector.parentNode.querySelector('.selected-category');
+        
+        if (!displayElement) {
+          displayElement = document.createElement('div');
+          displayElement.classList.add('selected-category', 'mt-2');
+          categorySelector.parentNode.appendChild(displayElement);
+        }
+        
+        // Update the display with category information
+        displayElement.innerHTML = `
+          <div class="p-2 border rounded">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <div class="fw-bold">${name || 'eBay Category'}</div>
+                ${fullPath ? `<div class="text-muted small">${fullPath}</div>` : ''}
+                <div class="text-muted small">ID: ${id}</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary change-category-btn">
+                Change
+              </button>
+            </div>
+          </div>
+        `;
+        
+        // Hide the original input since we're displaying the selected category
+        categorySelector.style.display = 'none';
+        
+        // Add event listener to the change button
+        const changeBtn = displayElement.querySelector('.change-category-btn');
+        if (changeBtn) {
+          changeBtn.addEventListener('click', function() {
+            // Show the original input
+            categorySelector.style.display = '';
+            // Hide the display element
+            displayElement.style.display = 'none';
+            // Clear the hidden input so the new selection will be used
+            hiddenCategoryInput.value = '';
+          });
+        }
+        
+        // Load item specifics for this category
+        loadItemSpecifics(id);
+      }
+    }
+    
+    // Function to load item specifics for a category
+    function loadItemSpecifics(categoryId) {
+      console.log("Loading item specifics for category:", categoryId);
+      
+      // First check if we already have server-prepared item specifics
+      if (window.serverPreparedItemSpecifics) {
+        displayItemSpecifics(window.serverPreparedItemSpecifics);
+        return;
+      }
+      
+      // Otherwise fetch from the server
+      fetch(`/kuralis/ebay_categories/${categoryId}/item_specifics`, {
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Failed to fetch item specifics');
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log("Fetched item specifics:", data);
+        displayItemSpecifics(data.item_specifics || []);
+      })
+      .catch(error => {
+        console.error("Error loading item specifics:", error);
+      });
+      
+      // Display item specifics in the form
+      function displayItemSpecifics(specifics) {
+        // Find or create the item specifics container
+        let specificContainer = document.getElementById('ebay-item-specifics-container');
+        
+        if (!specificContainer) {
+          specificContainer = document.createElement('div');
+          specificContainer.id = 'ebay-item-specifics-container';
+          specificContainer.className = 'mt-4 pt-4 border-top';
+          
+          // Find a good place to append it
+          const ebayTab = document.getElementById('ebay-info');
+          if (ebayTab) ebayTab.appendChild(specificContainer);
+        }
+        
+        // No specifics to display
+        if (!specifics || specifics.length === 0) {
+          specificContainer.innerHTML = `
+            <h5 class="mb-3">Item Specifics</h5>
+            <p class="text-muted">No item specifics available for this category.</p>
+          `;
+          return;
+        }
+        
+        // Start building the HTML for item specifics
+        let specificHtml = `
+          <h5 class="mb-3">Item Specifics</h5>
+          <div class="row">
+        `;
+        
+        // Add fields for each item specific
+        specifics.forEach(specific => {
+          const isRequired = specific.required;
+          const fieldName = `kuralis_product[ebay_product_attribute_attributes][item_specifics][${specific.name}]`;
+          const value = specific.value || '';
+          
+          specificHtml += `
+            <div class="col-md-6 mb-3">
+              <div class="form-group">
+                <label class="form-label">
+                  ${specific.name}
+                  ${isRequired ? '<span class="required-field-indicator">*</span>' : ''}
+                </label>
+                <input 
+                  type="text" 
+                  name="${fieldName}" 
+                  class="form-control" 
+                  value="${value}"
+                  ${isRequired ? 'required' : ''}
+                >
+                ${specific.help_text ? `<small class="text-muted">${specific.help_text}</small>` : ''}
+              </div>
+            </div>
+          `;
+        });
+        
+        specificHtml += `</div>`;
+        specificContainer.innerHTML = specificHtml;
+      }
     }
   });
 </script> 

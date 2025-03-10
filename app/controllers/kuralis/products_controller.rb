@@ -15,11 +15,50 @@ module Kuralis
 
     def create
       @product = current_shop.kuralis_products.new(product_params)
-      @product.source_platform = 'manual'
+      @product.source_platform = 'kuralis'
+      
+      # Handle AI analysis image if needed
+      if params[:ai_analysis_id].present? && params[:attach_analysis_image] == 'true'
+        analysis = current_shop.ai_product_analyses.find_by(id: params[:ai_analysis_id])
+        if analysis&.image_attachment&.attached?
+          @product.images.attach(analysis.image_attachment.blob)
+          Rails.logger.debug "Attached image from analysis to product: #{analysis.id}"
+        end
+      end
       
       if @product.save
+        if params[:ai_analysis_id].present?
+          analysis = current_shop.ai_product_analyses.find_by(id: params[:ai_analysis_id])
+          analysis.mark_as_processed! if analysis
+        end
         redirect_to kuralis_products_path, notice: "Product was successfully created."
       else
+        # If this was an AI-assisted creation and failed, maintain AI context
+        if params[:ai_analysis_id].present?
+          @ai_assisted = true
+          @ai_analysis_id = params[:ai_analysis_id]
+          analysis = current_shop.ai_product_analyses.find_by(id: params[:ai_analysis_id])
+          
+          if analysis&.image_attachment&.attached?
+            @image_from_analysis = {
+              url: url_for(analysis.image_attachment),
+              filename: analysis.image_attachment.filename.to_s,
+              content_type: analysis.image_attachment.content_type,
+              byte_size: analysis.image_attachment.byte_size
+            }
+          end
+          
+          # Try to retrieve category info again if needed
+          if @product.ebay_product_attribute&.category_id.present?
+            ebay_category = EbayCategory.find_by(category_id: @product.ebay_product_attribute.category_id)
+            @ai_category_info = ebay_category ? {
+              id: ebay_category.category_id,
+              name: ebay_category.name,
+              full_path: ebay_category.full_path
+            } : nil
+          end
+        end
+        
         render :new, status: :unprocessable_entity
       end
     end
@@ -249,43 +288,159 @@ module Kuralis
     
     # GET /kuralis/products/ai_analysis_status
     def ai_analysis_status
-      analysis = current_shop.ai_product_analyses.find(params[:analysis_id])
+      analysis = current_shop.ai_product_analyses.find_by(id: params[:analysis_id])
       
-      render json: analysis.as_json_with_details
+      unless analysis
+        render json: { error: "Analysis not found" }, status: :not_found
+        return
+      end
+      
+      has_image = analysis.image_attachment.attached?
+      image_url = has_image ? url_for(analysis.image_attachment) : nil
+
+      result = {
+        id: analysis.id,
+        status: analysis.status,
+        progress: analysis.progress,
+        has_image: has_image,
+        image_url: image_url,
+        created_at: analysis.created_at,
+        updated_at: analysis.updated_at
+      }
+      
+      if analysis.completed?
+        result[:results] = analysis.results
+      end
+      
+      respond_to do |format|
+        format.json { render json: result }
+        format.turbo_stream { 
+          render turbo_stream: turbo_stream.replace(
+            "analysis_#{analysis.id}", 
+            partial: "kuralis/products/ai/analysis_item", 
+            locals: { analysis: analysis }
+          )
+        }
+      end
     end
     
     # GET /kuralis/products/create_product_from_ai
     def create_product_from_ai
-      analysis = current_shop.ai_product_analyses.find(params[:analysis_id])
-      
-      unless analysis.completed?
-        respond_to do |format|
-          format.html { redirect_to bulk_ai_creation_kuralis_products_path, alert: "Analysis is not yet complete." }
-          format.json { render json: { error: "Analysis not complete" }, status: :unprocessable_entity }
-        end
+      analysis = current_shop.ai_product_analyses.find_by(id: params[:analysis_id])
+
+      unless analysis && analysis.completed?
+        flash[:alert] = "Analysis is not complete or not found"
+        redirect_to bulk_ai_creation_kuralis_products_path
         return
       end
+
+      Rails.logger.debug "Creating product from AI analysis: #{analysis.id}"
+      Rails.logger.debug "Analysis results: #{analysis.results.inspect}"
       
-      # Pre-populate the new product form with AI results
-      @product = KuralisProduct.new(
-        title: analysis.suggested_title,
-        description: analysis.suggested_description,
-        brand: analysis.suggested_brand,
-        condition: analysis.suggested_condition
+      # Create a new product with attributes from the analysis
+      @product = current_shop.kuralis_products.new(
+        title: analysis.results["title"],
+        description: analysis.results["description"],
+        brand: analysis.results["brand"],
+        condition: map_condition(analysis.results["condition"]),
+        base_quantity: 1
       )
       
-      # If there's an eBay product attribute, pre-populate it
-      @product.build_ebay_product_attribute(
-        category_id: analysis.suggested_ebay_category,
-        item_specifics: analysis.suggested_item_specifics
-      )
+      # Handle tags - can be either a string or an array
+      if analysis.results["tags"].present?
+        if analysis.results["tags"].is_a?(Array)
+          @product.tags = analysis.results["tags"]
+        else
+          @product.tags = analysis.results["tags"].to_s.split(/,\s*/)
+        end
+      end
       
-      # Mark the analysis as processed
-      analysis.mark_as_processed!
+      # Ensure we have a valid ebay_category_id
+      ebay_category_id = analysis.results["ebay_category_id"]
+      ebay_category_path = analysis.results["ebay_category"]
       
-      # Attach the image to the new product
-      @product.images.attach(analysis.image_attachment.blob) if analysis.image_attachment.attached?
+      Rails.logger.debug "eBay category data - ID: #{ebay_category_id}, Path: #{ebay_category_path}"
       
+      # Get detailed eBay category information - first try by path if available, then ID
+      ebay_category = nil
+      
+      if ebay_category_path.present?
+        ebay_category = find_ebay_category_by_path(ebay_category_path)
+        ebay_category_id = ebay_category.category_id if ebay_category
+        Rails.logger.debug "Category from path: #{ebay_category.inspect}"
+      end
+      
+      if ebay_category.nil? && ebay_category_id.present?
+        ebay_category = EbayCategory.find_by(category_id: ebay_category_id)
+        Rails.logger.debug "Category from ID: #{ebay_category.inspect}"
+      end
+      
+      # Build eBay product attributes with the data we have
+      ebay_attributes = {
+        condition_id: map_ebay_condition_id(analysis.results["condition"]),
+        condition_description: generate_condition_description(analysis.results),
+        item_specifics: analysis.results["item_specifics"] || {}
+      }
+      
+      # Add category_id if we found a valid category
+      ebay_attributes[:category_id] = ebay_category.category_id if ebay_category
+      
+      # Build the eBay product attribute
+      @product.build_ebay_product_attribute(ebay_attributes)
+      
+      # Load eBay item specifics for the category if available
+      @item_specifics = []
+      if ebay_category
+        begin
+          # Try to load category specifics from the eBay API/database
+          category_specifics = EbayCategoryItemSpecific.where(ebay_category_id: ebay_category.id)
+          
+          # If we have AI-provided item specifics, merge them with the category specifics
+          ai_item_specifics = analysis.results["item_specifics"] || {}
+          
+          @item_specifics = category_specifics.map do |specific|
+            {
+              name: specific.name,
+              required: specific.required,
+              help_text: specific.help_text,
+              value: ai_item_specifics[specific.name] || ''
+            }
+          end
+          
+          # Make item specifics available to JavaScript
+          @item_specifics_json = @item_specifics.to_json
+          
+          Rails.logger.debug "Loaded #{@item_specifics.size} item specifics for category"
+        rescue => e
+          Rails.logger.error "Error loading item specifics: #{e.message}"
+        end
+      end
+      
+      # Store image information for the view
+      @image_from_analysis = nil
+      if analysis.image_attachment.attached?
+        @image_from_analysis = {
+          url: url_for(analysis.image_attachment),
+          filename: analysis.image_attachment.filename.to_s,
+          content_type: analysis.image_attachment.content_type,
+          byte_size: analysis.image_attachment.byte_size
+        }
+        Rails.logger.debug "Image from analysis: #{@image_from_analysis[:url]}"
+      end
+      
+      # Set flags for AI-assisted creation
+      @ai_assisted = true
+      @ai_analysis_id = analysis.id
+      @ai_category_info = ebay_category ? {
+        id: ebay_category.category_id,
+        name: ebay_category.name,
+        full_path: ebay_category.full_path
+      } : nil
+      
+      # Mark the analysis as processed - defer until product is actually created
+      @analysis_to_mark_processed = analysis
+      
+      # Render the form with all pre-populated data
       render :new
     end
 
@@ -317,6 +472,149 @@ module Kuralis
           item_specifics: {}
         ]
       )
+    end
+
+    # Maps the AI-provided condition to the application's condition options
+    def map_condition(ai_condition)
+      condition_mapping = {
+        "New" => "New",
+        "Like New" => "Used - Like New",
+        "Mint" => "Used - Like New", 
+        "Near Mint" => "Used - Very Good",
+        "Very Good" => "Used - Very Good",
+        "Good" => "Used - Good",
+        "Fair" => "Used - Good",
+        "Poor" => "Used - Acceptable",
+        "Acceptable" => "Used - Acceptable"
+      }
+      
+      # Try to find a match in our mapping
+      if ai_condition.present?
+        condition_mapping.each do |ai_term, app_term|
+          return app_term if ai_condition.downcase.include?(ai_term.downcase)
+        end
+      end
+      
+      # Default to "Used - Good" if no match found
+      "Used - Good"
+    end
+    
+    # Maps the AI-provided condition to eBay's condition IDs
+    def map_ebay_condition_id(ai_condition)
+      condition_id_mapping = {
+        "New" => "1000",
+        "Like New" => "1500",
+        "Mint" => "1500",
+        "Near Mint" => "2500",
+        "Very Good" => "4000",
+        "Good" => "5000",
+        "Fair" => "5000",
+        "Poor" => "6000",
+        "Acceptable" => "6000"
+      }
+      
+      # Try to find a match in our mapping
+      if ai_condition.present?
+        condition_id_mapping.each do |ai_term, condition_id|
+          return condition_id if ai_condition.downcase.include?(ai_term.downcase)
+        end
+      end
+      
+      # Default to "Used" if no match found
+      "3000"
+    end
+
+    # Helper method to generate condition description from AI results
+    def generate_condition_description(results)
+      description = ""
+      
+      if results["condition"].present?
+        description += "Condition: #{results["condition"]}. "
+      end
+      
+      # For comics, add grading details
+      if results["publisher"].present?
+        description += "#{results["publisher"]} "
+        description += "Issue ##{results["issue_number"]} " if results["issue_number"].present?
+        description += "(#{results["year"]}) " if results["year"].present?
+        
+        # Add main characters if available
+        if results["characters"].present? && results["characters"].is_a?(Array) && results["characters"].any?
+          description += "featuring #{results["characters"].join(", ")}. "
+        end
+      end
+      
+      # Add any specific condition notes from item specifics
+      if results["item_specifics"].present?
+        specific_conditions = results["item_specifics"].select { |k, _| k.to_s.downcase.include?("condition") || k.to_s.downcase.include?("grade") }
+        if specific_conditions.any?
+          description += "Details: "
+          description += specific_conditions.map { |k, v| "#{k}: #{v}" }.join(", ")
+        end
+      end
+      
+      description
+    end
+
+    # Helper method to find an eBay category by path
+    def find_ebay_category_by_path(path)
+      return nil if path.blank?
+      
+      # Extract the leaf category name from the path
+      path_parts = path.split('>').map(&:strip)
+      leaf_name = path_parts.last
+      
+      # First try to find by exact leaf name
+      categories = EbayCategory.search_by_name(leaf_name).to_a
+      
+      if categories.any?
+        # If we have multiple matches, try to find the best match based on the full path
+        if categories.length > 1 && path_parts.length > 1
+          # Calculate similarity scores for each category
+          best_match = nil
+          best_score = 0
+          
+          categories.each do |category|
+            # Get the full path and calculate similarity
+            full_path = category.full_path
+            score = path_similarity(full_path, path)
+            
+            if score > best_score
+              best_score = score
+              best_match = category
+            end
+          end
+          
+          return best_match if best_match
+        end
+        
+        # If we couldn't find a good match or there's only one category, return the first one
+        return categories.first
+      end
+      
+      # If we couldn't find by leaf name, try a broader search
+      EbayCategory.where("name ILIKE ?", "%#{leaf_name}%").first
+    rescue => e
+      Rails.logger.error "Error in find_ebay_category_by_path: #{e.message}"
+      nil
+    end
+    
+    # Helper method to calculate similarity between two category paths
+    def path_similarity(path1, path2)
+      # Convert paths to arrays of parts
+      parts1 = path1.downcase.split('>').map(&:strip)
+      parts2 = path2.downcase.split('>').map(&:strip)
+      
+      # Count matching parts
+      matches = 0
+      parts1.each_with_index do |part, i|
+        if i < parts2.length && parts2[i].include?(part)
+          matches += 1
+        end
+      end
+      
+      # Return similarity score (0 to 1)
+      matches.to_f / [parts1.length, parts2.length].max
     end
   end
 end
