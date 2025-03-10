@@ -1,0 +1,455 @@
+<div class="container-fluid">
+  <div class="row mb-4">
+    <div class="col">
+      <h1 class="h3 mb-0 text-gray-800">Bulk AI Product Creation</h1>
+      <p class="text-muted">Upload product images and let AI help you create products faster</p>
+    </div>
+    <div class="col-auto">
+      <%= link_to "Back to Products", kuralis_products_path, class: "btn btn-outline-secondary" %>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- Upload Section -->
+    <div class="col-md-5">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+          <h6 class="m-0 font-weight-bold text-primary">Upload Images</h6>
+        </div>
+        <div class="card-body">
+          <!-- Hidden form that will be submitted -->
+          <form id="file-upload-form" action="<%= upload_images_kuralis_products_path %>" method="post" enctype="multipart/form-data">
+            <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
+            
+            <!-- Hidden file input that will hold the files -->
+            <input type="file" id="hidden-file-input" name="images[]" multiple accept="image/*" class="d-none">
+            
+            <!-- Drag and drop zone -->
+            <div id="dropzone" class="dropzone-container mb-4">
+              <div class="dropzone-content text-center p-4">
+                <i class="fas fa-cloud-upload-alt fa-3x mb-3 text-muted"></i>
+                <p class="mb-1">Drag and drop images here</p>
+                <p class="text-muted small mb-3">or</p>
+                <button type="button" id="browse-button" class="btn btn-outline-primary">
+                  Browse Files
+                </button>
+                <p class="text-muted small mt-2">You can upload multiple images</p>
+              </div>
+            </div>
+            
+            <!-- Preview zone -->
+            <div id="preview-container" class="mb-4 d-none">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0 font-weight-bold">Files selected: <span id="file-count">0</span></h6>
+                <button type="button" id="clear-button" class="btn btn-sm btn-outline-secondary">
+                  Clear
+                </button>
+              </div>
+              <div id="file-preview-list" class="mb-3"></div>
+            </div>
+            
+            <!-- Submit button -->
+            <div class="d-grid">
+              <button type="submit" id="upload-button" class="btn btn-primary">
+                Upload & Analyze Images
+              </button>
+            </div>
+          </form>
+          
+          <div class="mt-4">
+            <h6 class="font-weight-bold">How it works:</h6>
+            <ol class="small text-muted">
+              <li>Upload one or more product images</li>
+              <li>Our AI will analyze each image and extract product details</li>
+              <li>Review the AI suggestions and create products with pre-filled information</li>
+            </ol>
+          </div>
+          
+          <hr class="my-4">
+          
+          <div class="mt-4">
+            <h6 class="font-weight-bold">Alternative Upload Method:</h6>
+            <p class="small text-muted">If you're having trouble with the drag and drop uploader, try this simple form:</p>
+            
+            <form action="<%= upload_images_kuralis_products_path %>" method="post" enctype="multipart/form-data">
+              <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
+              <div class="mb-3">
+                <label for="simple-file-input" class="form-label">Select image files</label>
+                <input type="file" name="images[]" id="simple-file-input" multiple accept="image/*" class="form-control">
+              </div>
+              <div class="d-grid">
+                <button type="submit" class="btn btn-primary">Upload Images</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Analysis Results Section -->
+    <div class="col-md-7">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+          <h6 class="m-0 font-weight-bold text-primary">Image Analysis Results</h6>
+        </div>
+        <div class="card-body">
+          <div id="ai_analyses">
+            <%= render partial: "kuralis/products/ai_analyses", locals: { analyses: @analyses } %>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .dropzone-container {
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+    transition: all 0.3s ease;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  
+  .dropzone-container:hover, .dropzone-active {
+    border-color: #4e73df;
+    background-color: #f0f4ff;
+  }
+  
+  .analysis-item {
+    border: 1px solid #e3e6f0;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+  
+  .analysis-item:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+  }
+  
+  .analysis-image {
+    height: 150px;
+    width: 100%;
+    object-fit: cover;
+  }
+  
+  .analysis-status {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    border-radius: 50px;
+    padding: 2px 10px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+  
+  .status-pending {
+    background-color: #f8f9fa;
+    color: #5a5c69;
+  }
+  
+  .status-processing {
+    background-color: #36b9cc;
+    color: white;
+  }
+  
+  .status-completed {
+    background-color: #1cc88a;
+    color: white;
+  }
+  
+  .status-failed {
+    background-color: #e74a3b;
+    color: white;
+  }
+  
+  .file-preview-item {
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+  }
+  
+  .file-preview-item .file-icon {
+    margin-right: 10px;
+    color: #4e73df;
+  }
+  
+  .file-preview-item .file-name {
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .file-preview-item .file-size {
+    margin-left: 10px;
+    color: #6c757d;
+    font-size: 0.85em;
+  }
+</style>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Dropzone file upload functionality
+    setupDropzone();
+    
+    // Setup real-time analysis updates
+    setupRealTimeUpdates();
+    
+    // Initial poll for existing analyses
+    pollAnalysisStatus();
+  });
+  
+  function setupDropzone() {
+    const form = document.getElementById('file-upload-form');
+    const dropzone = document.getElementById('dropzone');
+    const hiddenFileInput = document.getElementById('hidden-file-input');
+    const browseButton = document.getElementById('browse-button');
+    const fileCount = document.getElementById('file-count');
+    const filePreviewList = document.getElementById('file-preview-list');
+    const previewContainer = document.getElementById('preview-container');
+    const clearButton = document.getElementById('clear-button');
+    
+    // Helper function to prevent default drag behavior
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    // Helper function to highlight dropzone on drag
+    function highlight() {
+      dropzone.classList.add('dropzone-active');
+    }
+    
+    // Helper function to remove highlight on drop/leave
+    function unhighlight() {
+      dropzone.classList.remove('dropzone-active');
+    }
+    
+    // Helper function to format file size
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    // Handle the actual drop
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      handleFiles(files);
+    }
+    
+    // Handle the selected files
+    function handleFiles(files) {
+      hiddenFileInput.files = files;
+      updateFilePreview(files);
+    }
+    
+    // Update the file preview
+    function updateFilePreview(files) {
+      if (files.length > 0) {
+        previewContainer.classList.remove('d-none');
+        fileCount.textContent = files.length;
+        filePreviewList.innerHTML = '';
+        
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const item = document.createElement('div');
+          item.className = 'file-preview-item';
+          item.innerHTML = `
+            <span class="file-icon"><i class="fas fa-file-image"></i></span>
+            <span class="file-name">${file.name}</span>
+            <span class="file-size">${formatFileSize(file.size)}</span>
+          `;
+          filePreviewList.appendChild(item);
+        }
+      } else {
+        previewContainer.classList.add('d-none');
+      }
+    }
+    
+    // Clear the selected files
+    function clearFiles() {
+      hiddenFileInput.value = '';
+      previewContainer.classList.add('d-none');
+      filePreviewList.innerHTML = '';
+    }
+    
+    // Set up event listeners
+    
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, preventDefaults, false);
+      document.body.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    // Highlight dropzone when dragging over it
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone.addEventListener(eventName, highlight, false);
+    });
+    
+    // Remove highlight when dragging leaves or after drop
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, unhighlight, false);
+    });
+    
+    // Handle actual drop
+    dropzone.addEventListener('drop', handleDrop, false);
+    
+    // Open file dialog when clicking on dropzone
+    dropzone.addEventListener('click', function() {
+      hiddenFileInput.click();
+    });
+    
+    // Same for the browse button
+    browseButton.addEventListener('click', function(e) {
+      e.stopPropagation(); // Prevent the dropzone click event
+      hiddenFileInput.click();
+    });
+    
+    // Handle file selection
+    hiddenFileInput.addEventListener('change', function() {
+      handleFiles(this.files);
+    });
+    
+    // Clear button
+    clearButton.addEventListener('click', clearFiles);
+    
+    // Handle form submission
+    form.addEventListener('submit', function(e) {
+      if (hiddenFileInput.files.length === 0) {
+        e.preventDefault();
+        alert('Please select at least one image to upload.');
+      } else {
+        // Show a loading state or message
+        const uploadButton = this.querySelector('button[type="submit"]');
+        if (uploadButton) {
+          uploadButton.disabled = true;
+          uploadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+        }
+      }
+    });
+  }
+  
+  function setupRealTimeUpdates() {
+    // Connect to ActionCable if available
+    if (typeof App !== 'undefined' && App.cable) {
+      console.log('Connecting to AI Analysis channel');
+      
+      App.aiAnalysis = App.cable.subscriptions.create("AiAnalysisChannel", {
+        connected: function() {
+          console.log("Connected to AI Analysis channel");
+        },
+        disconnected: function() {
+          console.log("Disconnected from AI Analysis channel");
+        },
+        received: function(data) {
+          console.log("Received update:", data);
+          updateAnalysisStatus(data);
+        }
+      });
+    } else {
+      console.log('ActionCable not available, falling back to polling');
+    }
+  }
+  
+  function updateAnalysisStatus(data) {
+    const element = document.querySelector(`[data-analysis-id="${data.analysis_id}"]`);
+    if (!element) return;
+    
+    const statusElement = element.querySelector('.analysis-status');
+    if (statusElement) {
+      statusElement.textContent = data.status;
+      statusElement.className = `analysis-status status-${data.status}`;
+    }
+    
+    // If completed, enable the create button and update content
+    if (data.completed) {
+      const createButton = element.querySelector('.create-product-btn');
+      if (createButton) {
+        createButton.classList.remove('disabled');
+        createButton.removeAttribute('disabled');
+      }
+      
+      // Update the title and description if available
+      if (data.results) {
+        const titleElement = element.querySelector('h6.font-weight-bold');
+        if (titleElement && data.results.title) {
+          titleElement.textContent = data.results.title;
+        }
+        
+        const descriptionContainer = element.querySelector('.small.text-muted.mb-3');
+        if (descriptionContainer && data.results.description) {
+          descriptionContainer.innerHTML = `
+            <p class="mb-1">${truncateString(data.results.description, 100)}</p>
+            ${data.results.price ? `<p class="mb-0">Price: $${data.results.price}</p>` : ''}
+          `;
+        }
+      }
+    } else if (data.status === 'failed') {
+      // Show error message
+      const contentContainer = element.querySelector('.p-3');
+      if (contentContainer) {
+        const errorElement = contentContainer.querySelector('.small.text-danger.mb-3') || document.createElement('p');
+        errorElement.className = 'small text-danger mb-3';
+        errorElement.textContent = data.error || 'Analysis failed. Please try again.';
+        
+        // Find where to insert the error message
+        const titleElement = contentContainer.querySelector('h6.font-weight-bold');
+        if (titleElement && titleElement.nextElementSibling) {
+          titleElement.nextElementSibling.replaceWith(errorElement);
+        } else if (titleElement) {
+          titleElement.after(errorElement);
+        }
+      }
+    }
+  }
+  
+  // Make the function globally available for the ActionCable channel
+  window.updateAnalysisStatus = updateAnalysisStatus;
+  
+  // Helper function to truncate strings
+  function truncateString(str, maxLength) {
+    if (!str) return '';
+    if (str.length <= maxLength) return str;
+    return str.substr(0, maxLength) + '...';
+  }
+  
+  // Poll for status updates (as a fallback to real-time updates)
+  function pollAnalysisStatus() {
+    document.querySelectorAll('[data-analysis-id]').forEach(element => {
+      const analysisId = element.dataset.analysisId;
+      const statusElement = element.querySelector('.analysis-status');
+      
+      if (statusElement && statusElement.classList.contains('status-pending') || 
+          statusElement && statusElement.classList.contains('status-processing')) {
+        
+        fetch(`/kuralis/products/ai_analysis_status?analysis_id=${analysisId}`)
+          .then(response => response.json())
+          .then(data => {
+            updateAnalysisStatus({
+              analysis_id: analysisId,
+              status: data.status,
+              completed: data.completed,
+              results: data.completed ? data.results : null
+            });
+          })
+          .catch(error => console.error('Error polling analysis status:', error));
+      }
+    });
+    
+    // Poll every 10 seconds as a fallback
+    setTimeout(pollAnalysisStatus, 10000);
+  }
+</script>

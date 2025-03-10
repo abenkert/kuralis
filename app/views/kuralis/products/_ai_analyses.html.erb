@@ -1,0 +1,72 @@
+<% if analyses.blank? %>
+  <div class="text-center py-5">
+    <i class="fas fa-image fa-3x mb-3 text-muted"></i>
+    <p class="mb-0">No images uploaded yet</p>
+    <p class="text-muted small">Upload images to see AI analysis results here</p>
+  </div>
+<% else %>
+  <div class="row">
+    <% analyses.each do |analysis| %>
+      <div class="col-md-6 mb-4">
+        <div class="analysis-item position-relative" data-analysis-id="<%= analysis.id %>">
+          <div class="analysis-status status-<%= analysis.status %>">
+            <%= analysis.status %>
+          </div>
+          
+          <% if analysis.image_attachment.attached? %>
+            <%= image_tag url_for(analysis.image_attachment), class: "analysis-image" %>
+          <% else %>
+            <div class="analysis-image bg-light d-flex align-items-center justify-content-center">
+              <i class="fas fa-image fa-2x text-muted"></i>
+            </div>
+          <% end %>
+          
+          <div class="p-3">
+            <h6 class="mb-2 font-weight-bold">
+              <% if analysis.completed? && analysis.results.present? %>
+                <%= analysis.results["title"] || "Product" %>
+              <% else %>
+                Image #<%= analysis.id %>
+              <% end %>
+            </h6>
+            
+            <% if analysis.completed? && analysis.results.present? %>
+              <div class="small text-muted mb-3">
+                <% if analysis.results["description"].present? %>
+                  <p class="mb-1"><%= truncate(analysis.results["description"], length: 100) %></p>
+                <% end %>
+                
+                <% if analysis.results["price"].present? %>
+                  <p class="mb-0">Price: $<%= analysis.results["price"] %></p>
+                <% end %>
+              </div>
+            <% elsif analysis.failed? %>
+              <p class="small text-danger mb-3">Analysis failed. Please try again.</p>
+            <% else %>
+              <p class="small text-muted mb-3">
+                <% if analysis.pending? %>
+                  Waiting to be analyzed...
+                <% elsif analysis.processing? %>
+                  AI is analyzing this image...
+                <% end %>
+              </p>
+            <% end %>
+            
+            <div class="d-flex justify-content-between">
+              <%= link_to "Remove", 
+                  remove_image_kuralis_products_path(analysis_id: analysis.id), 
+                  method: :delete, 
+                  class: "btn btn-sm btn-outline-danger", 
+                  data: { turbo_method: :delete, turbo_confirm: "Are you sure you want to remove this image?" } %>
+              
+              <%= link_to "Create Product", 
+                  create_product_from_ai_kuralis_products_path(analysis_id: analysis.id), 
+                  class: "btn btn-sm btn-primary create-product-btn #{analysis.completed? ? '' : 'disabled'}", 
+                  disabled: !analysis.completed? %>
+            </div>
+          </div>
+        </div>
+      </div>
+    <% end %>
+  </div>
+<% end %> 

@@ -89,3 +89,5 @@ gem 'down'
 # Pagination
 gem 'kaminari'
 
+
+gem "ruby-openai", "~> 7.4"

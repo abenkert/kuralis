@@ -8,6 +8,7 @@ class Shop < ApplicationRecord
   has_many :orders, dependent: :destroy
   # has_one :user, dependent: :destroy  # Commented out for now
   has_many :shopify_products, dependent: :destroy
+  has_many :ai_product_analyses, dependent: :destroy
   
   def api_version
     ShopifyApp.configuration.api_version

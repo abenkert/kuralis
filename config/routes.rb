@@ -49,6 +49,11 @@ Rails.application.routes.draw do
         post :bulk_action
         get :bulk_listing
         post :process_bulk_listing
+        get :bulk_ai_creation
+        post :upload_images
+        delete :remove_image
+        get :ai_analysis_status
+        get :create_product_from_ai
       end
     end
   end

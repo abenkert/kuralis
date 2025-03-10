@@ -26,6 +26,10 @@
     <div id="flash">
       <%= render "shared/flash" %>
     </div>
+    
+    <!-- Container for Turbo Stream flash messages -->
+    <div id="flash_messages"></div>
+    
     <% if flash[:notice] %>
       <div class="alert alert-success">
         <%= flash[:notice] %>
