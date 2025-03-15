@@ -53,7 +53,10 @@ module Ebay
 
       if response.is_a?(Net::HTTPSuccess)
         doc = Nokogiri::XML(response.body)
+
         namespace = { "ebay" => "urn:ebay:apis:eBLBaseComponents" }
+        category_count = doc.xpath('//ebay:CategoryCount', namespace).text.to_i
+        Rails.logger.info "Fetched #{category_count} categories from eBay API"
         
         parse_categories(doc, namespace)
       else
@@ -69,7 +72,6 @@ module Ebay
           <RequesterCredentials>
             <eBayAuthToken>#{@token_service.fetch_or_refresh_access_token}</eBayAuthToken>
           </RequesterCredentials>
-          <CategorySiteID>0</CategorySiteID>
           <DetailLevel>ReturnAll</DetailLevel>
           <ViewAllNodes>true</ViewAllNodes>
         </GetCategoriesRequest>
@@ -88,8 +90,9 @@ module Ebay
         
         next if category_id.blank? || name.blank?
         
-        # Skip the root category
-        next if category_id == parent_id
+        # Previously we skipped root categories (where category_id == parent_id)
+        # Now we include them to ensure complete category paths for better matching with AI suggestions
+        # next if category_id == parent_id
         
         categories << {
           category_id: category_id,

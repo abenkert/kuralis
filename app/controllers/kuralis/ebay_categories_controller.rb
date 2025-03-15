@@ -105,4 +105,30 @@ class Kuralis::EbayCategoriesController < AuthenticatedController
       format.json { render json: @item_specifics }
     end
   end
+  
+  # GET /kuralis/ebay_categories/:id
+  # Get a specific eBay category by ID
+  def show
+    category_id = params[:id]
+    marketplace_id = params[:marketplace_id] || 'EBAY_US'
+    
+    @category = EbayCategory.find_by(category_id: category_id, marketplace_id: marketplace_id)
+    
+    if @category.present?
+      @category_data = @category.as_json
+      @category_data['full_path'] = @category.full_path
+    else
+      @category_data = {
+        category_id: category_id,
+        name: "Category #{category_id}",
+        full_path: "Unknown Category Path",
+        leaf: true
+      }
+    end
+    
+    respond_to do |format|
+      format.html # show.html.erb
+      format.json { render json: @category_data }
+    end
+  end
 end

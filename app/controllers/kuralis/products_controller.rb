@@ -27,7 +27,7 @@ module Kuralis
 
     def create
       @product = current_shop.kuralis_products.new(product_params)
-      @product.source_platform = 'manual'
+      @product.source_platform = 'kuralis'
       
       # If this was a draft product, mark it as finalized
       if params[:draft_id].present?

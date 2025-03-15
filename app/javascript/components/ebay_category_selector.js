@@ -51,6 +51,9 @@ class EbayCategorySelector {
     this.hiddenInput.name = this.element.name;
     this.hiddenInput.id = this.element.id;
     
+    // Copy the original element's value to the hidden input
+    this.hiddenInput.value = this.element.value || '';
+    
     // Create selected category display
     this.selectedDisplay = document.createElement('div');
     this.selectedDisplay.className = 'selected-category mt-2 d-none';
@@ -368,6 +371,9 @@ class EbayCategorySelector {
       
       this.createSpecificFields(container, optionalSpecifics);
     }
+    
+    // After rendering is complete, try to populate with existing values
+    this.populateExistingItemSpecifics();
   }
   
   createSpecificFields(container, specifics) {
@@ -467,14 +473,65 @@ class EbayCategorySelector {
       row.appendChild(col);
     });
   }
+  
+  populateExistingItemSpecifics() {
+    // Check if we have existing item specifics data in options
+    if (!this.options.existingItemSpecifics) {
+      console.log('No existing item specifics data found in options');
+      return;
+    }
+    
+    try {
+      const itemSpecificsData = this.options.existingItemSpecifics;
+      console.log('Found existing item specifics:', itemSpecificsData);
+      
+      // Iterate through the data and populate form fields
+      Object.entries(itemSpecificsData).forEach(([key, value]) => {
+        // Skip empty values
+        if (!value) return;
+        
+        // Convert the key to the format used in field names
+        const fieldName = key.replace(/\s+/g, '_').toLowerCase();
+        const selector = `[name="kuralis_product[ebay_product_attribute_attributes][item_specifics][${fieldName}]"]`;
+        
+        const field = document.querySelector(selector);
+        if (field) {
+          console.log(`Populating field ${fieldName} with value: ${value}`);
+          field.value = value;
+        } else {
+          // Try with original case
+          const altSelector = `[name="kuralis_product[ebay_product_attribute_attributes][item_specifics][${key}]"]`;
+          const altField = document.querySelector(altSelector);
+          if (altField) {
+            console.log(`Populating field ${key} with value: ${value}`);
+            altField.value = value;
+          } else {
+            console.log(`Could not find field for item specific: ${key}`);
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error processing item specifics data:', error);
+    }
+  }
 }
 
 // Initialize all eBay category selectors on the page
-document.addEventListener('DOMContentLoaded', () => {
+function initializeEbayCategorySelectors() {
   document.querySelectorAll('[data-ebay-category-selector]').forEach(element => {
-    const options = JSON.parse(element.getAttribute('data-options') || '{}');
-    new EbayCategorySelector(element, options);
+    // Check if the element has already been initialized to prevent duplicate initialization
+    if (!element.hasAttribute('data-initialized')) {
+      const options = JSON.parse(element.getAttribute('data-options') || '{}');
+      new EbayCategorySelector(element, options);
+      // Mark as initialized
+      element.setAttribute('data-initialized', 'true');
+    }
   });
-});
+}
+
+// Initialize on both DOMContentLoaded and turbo:load/render events
+document.addEventListener('DOMContentLoaded', initializeEbayCategorySelectors);
+document.addEventListener('turbo:load', initializeEbayCategorySelectors);
+document.addEventListener('turbo:render', initializeEbayCategorySelectors);
 
 export default EbayCategorySelector; 

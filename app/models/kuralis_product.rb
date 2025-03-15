@@ -18,7 +18,6 @@ class KuralisProduct < ApplicationRecord
   scope :finalized, -> { where(is_draft: false) }
   scope :from_ebay, -> { where(source_platform: 'ebay') }
   scope :from_shopify, -> { where(source_platform: 'shopify') }
-  scope :from_ai, -> { where(source_platform: 'ai') }
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
   after_update :schedule_platform_updates, if: :saved_change_to_base_quantity?
 
@@ -68,7 +67,6 @@ class KuralisProduct < ApplicationRecord
   
   # Create a draft product from AI analysis
   def self.create_from_ai_analysis(analysis, shop)
-    # First create the draft product without eBay attributes
     draft_product = shop.kuralis_products.new(
       title: analysis.suggested_title.presence || "Untitled Product",
       description: analysis.suggested_description,

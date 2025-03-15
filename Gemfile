@@ -91,3 +91,6 @@ gem 'kaminari'
 
 
 gem "ruby-openai", "~> 7.4"
+
+# Add pgvector for vector similarity search (for eBay category embeddings)
+gem "pgvector", "~> 0.2.2"

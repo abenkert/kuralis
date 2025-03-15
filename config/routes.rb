@@ -38,6 +38,7 @@ Rails.application.routes.draw do
   namespace :kuralis do
     get "ebay_categories/search"
     post "ebay_categories/import"
+    get "ebay_categories/:id", to: "ebay_categories#show", as: :ebay_category
     resources :ebay_categories, only: [:index] do
       member do
         get :item_specifics

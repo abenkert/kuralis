@@ -1,3 +1,5 @@
+require 'set'
+
 class EbayCategory < ApplicationRecord
   # Validations
   validates :category_id, presence: true
@@ -7,10 +9,21 @@ class EbayCategory < ApplicationRecord
   validates :category_id, uniqueness: { scope: :marketplace_id }
   
   # Scopes
-  scope :roots, -> { where(parent_id: nil) }
+  scope :roots, -> { where("parent_id IS NULL OR category_id = parent_id") }
   scope :leaves, -> { where(leaf: true) }
   scope :for_marketplace, ->(marketplace_id) { where(marketplace_id: marketplace_id) }
   scope :search_by_name, ->(query) { where("name ILIKE ?", "%#{query}%") }
+  scope :with_embedding, -> { where.not(embedding_json: nil) }
+  
+  # Add embedding-related methods
+  def has_embedding?
+    embedding_json.present?
+  end
+  
+  # Generate embedding for this category
+  def generate_embedding!
+    Ai::EbayCategoryEmbeddingService.generate_embedding_for_category(self)
+  end
   
   # Tree structure methods
   def parent
@@ -25,12 +38,23 @@ class EbayCategory < ApplicationRecord
   def ancestors
     return [] if parent_id.nil?
     
+    # Handle root categories (where category_id = parent_id) to avoid infinite loops
+    return [] if category_id == parent_id
+    
     ancestors = []
     current = self
+    visited = Set.new([category_id]) # Track visited categories to prevent loops
     
     while (parent = current.parent)
+      # Prevent infinite loops
+      break if visited.include?(parent.category_id) 
+      visited.add(parent.category_id)
+      
       ancestors.unshift(parent)
       current = parent
+      
+      # Also break if we encounter a root category
+      break if parent.category_id == parent.parent_id
     end
     
     ancestors

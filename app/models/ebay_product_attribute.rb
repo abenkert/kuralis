@@ -1,7 +1,8 @@
 class EbayProductAttribute < ApplicationRecord
-    belongs_to :kuralis_product
+    belongs_to :kuralis_product, optional: true
     
-    validates :kuralis_product_id, presence: true, uniqueness: true
+    # Modified validation to allow new records temporarily
+    validates :kuralis_product_id, uniqueness: true, if: -> { kuralis_product_id.present? }
     
     # Add validations for eBay-specific fields
     

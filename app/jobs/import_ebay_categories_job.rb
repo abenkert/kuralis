@@ -1,9 +1,9 @@
 class ImportEbayCategoriesJob < ApplicationJob
   queue_as :default
 
-  def perform(ebay_account_id, marketplace_id = 'EBAY_US')
+  def perform(shop_id, marketplace_id = 'EBAY_US')
     # Find the eBay account
-    ebay_account = ShopifyEbayAccount.find(ebay_account_id)
+    ebay_account = ShopifyEbayAccount.find_by(shop_id: shop_id)
     
     begin
       # Use our service to import categories

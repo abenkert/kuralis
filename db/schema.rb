@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_03_10_165840) do
+ActiveRecord::Schema[8.0].define(version: 2025_03_10_215452) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -65,6 +65,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_10_165840) do
     t.jsonb "metadata", default: {}
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "embedding_json"
     t.index ["category_id"], name: "index_ebay_categories_on_category_id"
     t.index ["marketplace_id", "category_id"], name: "index_ebay_categories_on_marketplace_id_and_category_id", unique: true
     t.index ["marketplace_id", "parent_id"], name: "index_ebay_categories_on_marketplace_id_and_parent_id"

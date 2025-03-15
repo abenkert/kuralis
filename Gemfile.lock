@@ -286,6 +286,7 @@ GEM
       ast (~> 2.4.1)
       racc
     pg (1.5.9)
+    pgvector (0.2.2)
     popper_js (2.11.8)
     propshaft (1.1.0)
       actionpack (>= 7.0.0)
@@ -529,6 +530,7 @@ DEPENDENCIES
   kaminari
   nokogiri
   pg (~> 1.1)
+  pgvector (~> 0.2.2)
   propshaft
   puma (>= 5.0)
   rails (~> 8.0.0)

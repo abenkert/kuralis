@@ -60,8 +60,6 @@ class AiProductAnalysisJob < ApplicationJob
     end
   end
   
-  private
-  
   def analyze_image(image_data, filename)
     # Call OpenAI API to analyze the image using the OpenAI Vision API
     begin
@@ -88,19 +86,30 @@ class AiProductAnalysisJob < ApplicationJob
       max_tokens: 10000
     )
     
+    # Since we don't have a product description yet, we'll just use popular categories
+    # category_context = Ai::EbayCategoryService.generate_category_aware_system_prompt
+    
+    # Get the eBay category prompt
+    category_prompt = Ai::EbayCategoryService.generate_ebay_category_prompt
+    
     # Construct the prompt for better structured results
     prompt = "Analyze this product image and provide detailed information. Return a JSON object with the following fields:\n\n" \
              "- title: Product title\n" \
              "- description: Detailed product description\n" \
-             "- brand: Brand name if visible\n" \
-             "- ebay_category_path: Full eBay category path (e.g., 'Collectibles > Comic Books & Memorabilia > Comics > Comics & Graphic Novels')\n" \
-             "- item_specifics: A JSON object with key-value pairs of important product attributes\n" \
+             "- brand: Brand name if possible\n" \
+             "- ebay_category_path: The full hierarchical path of the most appropriate eBay category for this product\n" \
+             "- item_specifics: A JSON object with key-value pairs of important product attributes that are specific to the ebay category\n" \
              "- tags: Array of relevant tags for the product\n\n" \
-             "If you cannot determine some fields, use null values. For item_specifics, provide as many relevant details as possible based on the product image these should be specific to the ebay category."
+             "If you cannot determine some fields, use null values. For item_specifics, provide as many relevant details as possible based on the product image these should be specific to the ebay category.\n\n" \
+             "IMPORTANT: Only use eBay categories. Do not make up categories."
     
     # Since the OpenAI service doesn't have a specific vision method,
     # we'll use chat_with_history and construct the messages with the image
     messages = [
+      {
+        role: "system",
+        content: category_prompt
+      },
       {
         role: "user",
         content: [
@@ -166,9 +175,23 @@ class AiProductAnalysisJob < ApplicationJob
       data = extract_data_from_text(content)
     end
     
-    # Process eBay category path to find category ID if possible
+    # Process eBay category - using our improved two-stage approach
     if data["ebay_category_path"].present?
-      data["ebay_category"] = find_ebay_category_id(data["ebay_category_path"])
+      # Log the AI-suggested category path
+      Rails.logger.info "AI suggested eBay category path: #{data["ebay_category_path"]}"
+      
+      # Use our enhanced category matching service to find the best match
+      ebay_category = Ai::EbayCategoryService.find_matching_ebay_category(data["ebay_category_path"])
+      
+      if ebay_category
+        data["ebay_category"] = ebay_category.category_id
+        Rails.logger.info "Matched to eBay category: #{ebay_category.name} (ID: #{ebay_category.category_id})"
+      else
+        Rails.logger.warn "Could not match AI suggested category to any eBay category: #{data["ebay_category_path"]}"
+      end
+    elsif data["ebay_category_id"].present?
+      # Fallback if the model somehow provided a direct category ID
+      data["ebay_category"] = data["ebay_category_id"]
     end
     
     # Ensure all expected fields are present
@@ -229,39 +252,12 @@ class AiProductAnalysisJob < ApplicationJob
   end
   
   def find_ebay_category_id(category_path)
-    # This is a placeholder for a more sophisticated category lookup
-    # In a real implementation, you might:
-    # 1. Search your local database of eBay categories
-    # 2. Call eBay API to search for matching categories
-    # 3. Have a mapping table from common paths to category IDs
-    
-    begin
-      # Try to find the category in the database
-      # Example (depends on your actual database structure):
-      category_terms = category_path.split(' > ').last(2)
-      
-      if category_terms.any?
-        # Search for matching category by name
-        category = EbayCategory.where('name ILIKE ?', "%#{category_terms.last}%").first
-        
-        if category
-          return category.category_id
-        else
-          # More specific search if needed
-          category_terms.each do |term|
-            category = EbayCategory.where('name ILIKE ?', "%#{term}%").first
-            return category.category_id if category
-          end
-        end
-      end
-      
-      # If we couldn't find a matching category, return nil
-      # The user will need to select a category manually
-      return nil
-    rescue => e
-      Rails.logger.error "Error finding eBay category: #{e.message}"
-      return nil
-    end
+    # Use our new service for better category matching
+    category = Ai::EbayCategoryService.find_best_matching_category(category_path)
+    return category&.category_id
+  rescue => e
+    Rails.logger.error "Error finding eBay category: #{e.message}"
+    return nil
   end
   
   def broadcast_update(analysis)
