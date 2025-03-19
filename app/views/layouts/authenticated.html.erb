@@ -20,84 +20,112 @@
     <div class="container-fluid">
       <div class="row">
         <!-- Sidebar -->
-        <nav id="sidebar" class="col-md-3 col-lg-2 d-md-block bg-light sidebar">
+        <nav id="sidebar" class="col-md-3 col-lg-2 d-md-block sidebar">
+          <div class="sidebar-header">
+            <%= link_to dashboard_path, class: "brand" do %>
+              <img src="/icon.png" alt="Kuralis Logo">
+              <span>Kuralis</span>
+            <% end %>
+          </div>
+
           <div class="position-sticky pt-3">
             <ul class="nav flex-column">
               <li class="nav-item">
-                <a class="nav-link active" aria-current="page" href="<%= dashboard_path %>">
-                  <i class="bi bi-house-door"></i> Home
-                </a>
+                <%= link_to dashboard_path, class: "nav-link #{current_page?(dashboard_path) ? 'active' : ''}" do %>
+                  <i class="bi bi-house-door"></i> Dashboard
+                <% end %>
               </li>
-              <li class="nav-item dropdown">
-                <a class="nav-link dropdown-toggle" href="#" id="kuralisProductsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                  <i class="bi bi-shop"></i> Kuralis Products
-                </a>
-                <ul class="dropdown-menu" aria-labelledby="kuralisProductsDropdown">
-                  <li>
-                    <a class="dropdown-item" href="<%= kuralis_products_path %>">
-                      <i class="bi bi-list"></i> View Products
-                    </a>
-                  </li>
-                  <li>
-                    <a class="dropdown-item" href="<%= bulk_ai_creation_kuralis_products_path %>">
-                      <i class="bi bi-magic"></i> Bulk AI Creation
-                    </a>
-                  </li>
-                </ul>
+
+              <li class="nav-item">
+                <%= link_to kuralis_products_path, class: "nav-link #{current_page?(kuralis_products_path) ? 'active' : ''}" do %>
+                  <i class="bi bi-box"></i> Products
+                <% end %>
+              </li>
+
+              <li class="nav-item">
+                <%= link_to bulk_ai_creation_kuralis_products_path, class: "nav-link #{current_page?(bulk_ai_creation_kuralis_products_path) ? 'active' : ''}" do %>
+                  <i class="bi bi-magic"></i> AI Creation
+                <% end %>
               </li>
               
               <% if current_shop.shopify_ebay_account.present? %>
                 <li class="nav-item">
-                  <a class="nav-link" href="<%= ebay_listings_path %>">
+                  <%= link_to ebay_listings_path, class: "nav-link #{current_page?(ebay_listings_path) ? 'active' : ''}" do %>
                     <i class="bi bi-cart"></i> eBay Listings
-                  </a>
+                  <% end %>
                 </li>
               <% else %>
-                <li class="nav-item"
-                    data-bs-toggle="tooltip"
-                    data-bs-placement="right"
-                    title="Please connect your eBay account in Settings to access eBay listings">
-                  <a class="nav-link disabled text-muted" 
-                     href="#"
-                     style="cursor: not-allowed;">
+                <li class="nav-item">
+                  <%= link_to "#", class: "nav-link disabled", 
+                      data: { 
+                        bs_toggle: "tooltip",
+                        bs_placement: "right",
+                        title: "Please connect your eBay account in Settings to access eBay listings"
+                      } do %>
                     <i class="bi bi-cart"></i> eBay Listings
-                  </a>
+                  <% end %>
                 </li>
               <% end %>
 
               <li class="nav-item">
-                <a class="nav-link" href="<%= shopify_products_path %>">
-                  <i class="bi bi-box-seam"></i> Shopify Products
-                </a>
+                <%= link_to shopify_products_path, class: "nav-link #{current_page?(shopify_products_path) ? 'active' : ''}" do %>
+                  <i class="bi bi-shop"></i> Shopify Products
+                <% end %>
               </li>
+
               <li class="nav-item">
-                <a class="nav-link" href="<%= orders_path %>">
+                <%= link_to orders_path, class: "nav-link #{current_page?(orders_path) ? 'active' : ''}" do %>
                   <i class="bi bi-receipt"></i> Orders
-                </a>
+                <% end %>
               </li>
+
               <li class="nav-item">
-                <a class="nav-link" href="<%= settings_path %>">
+                <%= link_to settings_path, class: "nav-link #{current_page?(settings_path) ? 'active' : ''}" do %>
                   <i class="bi bi-gear"></i> Settings
-                </a>
+                <% end %>
               </li>
             </ul>
+          </div>
+
+          <div class="sidebar-footer">
+            <div class="user-info">
+              <div class="avatar">
+                <%= current_shop.shopify_domain.first.upcase %>
+              </div>
+              <div class="user-details">
+                <div class="user-name"><%= current_shop.shopify_domain %></div>
+                <div class="user-role">Store Owner</div>
+              </div>
+            </div>
           </div>
         </nav>
 
         <!-- Main content -->
         <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
           <% if flash[:notice] %>
-            <div class="alert alert-success">
+            <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
               <%= flash[:notice] %>
+              <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
           <% elsif flash[:alert] %>
-            <div class="alert alert-danger">
+            <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
               <%= flash[:alert] %>
+              <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
           <% end %>
           <%= yield %>
         </main>
       </div>
     </div>
+
+    <script>
+      // Initialize tooltips
+      document.addEventListener('DOMContentLoaded', function() {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+          return new bootstrap.Tooltip(tooltipTriggerEl)
+        })
+      });
+    </script>
   </body>
 </html> 
