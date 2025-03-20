@@ -90,15 +90,12 @@ module Ai
             best_match = find_best_matching_value(ai_value.to_s, aspect["values"])
             return best_match || "" # Return empty string if no match found for required select fields
 
-          # For "text_with_suggestions" type fields, try to match but allow custom values
+          # For "text_with_suggestions" type fields, use the AI value directly
           elsif value_type == "text_with_suggestions"
-            # Try to find a matching suggested value first
-            best_match = find_best_matching_value(ai_value.to_s, aspect["values"])
-            return best_match if best_match
+            return ai_value.to_s.strip
           end
 
-          # For other field types or if no match in text_with_suggestions
-          # Try the previous simple matching logic for backward compatibility
+          # For other field types, try the previous simple matching logic for backward compatibility
           aspect["values"].each do |value|
             return value if value.downcase.include?(ai_value.to_s.downcase) ||
                            ai_value.to_s.downcase.include?(value.downcase)
