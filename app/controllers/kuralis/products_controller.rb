@@ -95,59 +95,101 @@ module Kuralis
 
     def bulk_listing
       @platform = params[:platform]
-      @total_count = current_shop.kuralis_products
-                            .where(
-                              case @platform
-                              when "shopify"
-                                { shopify_product_id: nil }
-                              when "ebay"
-                                { ebay_listing_id: nil }
-                              end
-                            ).count
+      @platforms_available = %w[shopify ebay]
 
-      @products = current_shop.kuralis_products
-                             .where(
-                               case @platform
-                               when "shopify"
-                                 { shopify_product_id: nil }
-                               when "ebay"
-                                 { ebay_listing_id: nil }
-                               end
-                             )
-                             .order(created_at: :desc)
-                             .page(params[:page])
-                             .per(100)
+      # Query products unlisted on the selected platform
+      case @platform
+      when "shopify"
+        @products = current_shop.kuralis_products.where(shopify_product_id: nil)
+      when "ebay"
+        @products = current_shop.kuralis_products.where(ebay_listing_id: nil)
+      when "all"
+        # Products unlisted on any platform
+        @products = current_shop.kuralis_products.unlinked
+      else
+        # Default to showing all products
+        @products = current_shop.kuralis_products
+      end
+
+      @total_count = @products.count
+      @products = @products.order(created_at: :desc).page(params[:page]).per(100)
     end
 
     def process_bulk_listing
-      platform = params[:platform]
+      platforms = params[:platforms] || []
+
+      # Ensure at least one platform is selected
+      if platforms.empty?
+        redirect_to bulk_listing_kuralis_products_path, alert: "Please select at least one platform for listing."
+        return
+      end
 
       if params[:select_all_records] == "1"
         # Get all product IDs except deselected ones
         deselected_ids = JSON.parse(params[:deselected_ids] || "[]")
-        product_ids = current_shop.kuralis_products
-                                 .where(
-                                   case platform
-                                   when "shopify"
-                                     { shopify_product_id: nil }
-                                   when "ebay"
-                                     { ebay_listing_id: nil }
-                                   end
-                                 )
-                                 .where.not(id: deselected_ids)
-                                 .pluck(:id)
+
+        # Find eligible products for each platform and get the intersection
+        product_ids = []
+
+        if platforms.include?("shopify")
+          shopify_ids = current_shop.kuralis_products.where(shopify_product_id: nil).pluck(:id)
+          product_ids = product_ids.empty? ? shopify_ids : product_ids & shopify_ids
+        end
+
+        if platforms.include?("ebay")
+          ebay_ids = current_shop.kuralis_products.where(ebay_listing_id: nil).pluck(:id)
+          product_ids = product_ids.empty? ? ebay_ids : product_ids & ebay_ids
+        end
+
+        # Remove deselected products
+        product_ids = product_ids - deselected_ids
       else
         product_ids = params[:product_ids] || []
+      end
+
+      if product_ids.empty?
+        redirect_to kuralis_products_path, alert: "No eligible products selected for listing."
+        return
       end
 
       BulkListingJob.perform_later(
         shop_id: current_shop.id,
         product_ids: product_ids,
-        platform: platform
+        platforms: platforms
       )
 
       redirect_to kuralis_products_path,
-                  notice: "Bulk listing process started for #{product_ids.count} products. You'll be notified when complete."
+                  notice: "Bulk listing process started for #{product_ids.count} products on #{platforms.join(' and ')}. You'll be notified when complete."
+    end
+
+    # Single product listing
+    def create_listing
+      @product = current_shop.kuralis_products.find(params[:id])
+      platforms = params[:platforms] || []
+
+      if platforms.empty?
+        redirect_to kuralis_product_path(@product), alert: "Please select at least one platform for listing."
+        return
+      end
+
+      service = ListingService.new(
+        shop: current_shop,
+        product: @product,
+        platforms: platforms
+      )
+
+      results = service.create_listings
+
+      success_count = results.count { |_, r| r[:success] }
+      total_count = results.size
+
+      if success_count == total_count
+        redirect_to kuralis_product_path(@product), notice: "Product successfully listed on #{platforms.join(' and ')}."
+      elsif success_count > 0
+        redirect_to kuralis_product_path(@product), notice: "Product listed on some platforms. Check notifications for details."
+      else
+        redirect_to kuralis_product_path(@product), alert: "Failed to list product. Check notifications for details."
+      end
     end
 
     def destroy

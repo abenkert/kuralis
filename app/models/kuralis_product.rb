@@ -52,6 +52,31 @@ class KuralisProduct < ApplicationRecord
     last_synced_at.nil? || last_synced_at < updated_at
   end
 
+  # Platform eligibility checks
+  def eligible_for_shopify?
+    !listed_on_shopify? && title.present? && images.attached?
+  end
+
+  def eligible_for_ebay?
+    !listed_on_ebay? && has_ebay_attributes? && title.present? && images.attached?
+  end
+
+  # Get a list of platforms this product is eligible for
+  def eligible_platforms
+    platforms = []
+    platforms << "shopify" if eligible_for_shopify?
+    platforms << "ebay" if eligible_for_ebay?
+    platforms
+  end
+
+  # Get a list of platforms this product is already listed on
+  def listed_platforms
+    platforms = []
+    platforms << "shopify" if listed_on_shopify?
+    platforms << "ebay" if listed_on_ebay?
+    platforms
+  end
+
   # Draft methods
   def draft?
     is_draft

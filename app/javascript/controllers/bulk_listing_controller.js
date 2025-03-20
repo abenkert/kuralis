@@ -1,7 +1,17 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["checkbox", "deselectedIds", "selectAllRecords", "selectedCount", "searchInput", "productRow"]
+  static targets = [
+    "checkbox", 
+    "deselectedIds", 
+    "selectAllRecords", 
+    "selectedCount", 
+    "searchInput", 
+    "productRow",
+    "platformCheckbox",
+    "submitButton"
+  ]
+  
   static values = {
     totalCount: Number
   }
@@ -29,6 +39,7 @@ export default class extends Controller {
     });
 
     this.updateDeselectedIds();
+    this.updatePlatformState();
   }
 
   updateDeselectedIds() {
@@ -84,5 +95,19 @@ export default class extends Controller {
       if (isVisible) visibleCount++;
     });
     console.log(`Search complete: ${visibleCount} products visible`);
+  }
+  
+  // Handle platform selection
+  togglePlatform(event) {
+    console.log(`Platform ${event.target.value} toggled: ${event.target.checked}`);
+    this.updatePlatformState();
+  }
+  
+  updatePlatformState() {
+    if (this.hasPlatformCheckboxTarget && this.hasSubmitButtonTarget) {
+      const anyPlatformSelected = this.platformCheckboxTargets.some(checkbox => checkbox.checked);
+      this.submitButtonTarget.disabled = !anyPlatformSelected;
+      console.log(`Submit button enabled: ${anyPlatformSelected}`);
+    }
   }
 } 
