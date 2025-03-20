@@ -19,7 +19,7 @@ gem "stimulus-rails"
 # Build JSON APIs with ease [https://github.com/rails/jbuilder]
 gem "jbuilder"
 gem 'savon'
-
+gem 'mini_magick'
 
 gem 'shopify_app'
 gem 'dotenv-rails'

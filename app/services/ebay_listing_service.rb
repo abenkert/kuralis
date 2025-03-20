@@ -5,6 +5,7 @@ class EbayListingService
     @product = kuralis_product
     @shop = @product.shop
     @ebay_attributes = @product.ebay_product_attribute
+    @token_service = EbayTokenService.new(@shop)
   end
 
   def create_listing
@@ -16,28 +17,40 @@ class EbayListingService
       raise StandardError, "Product is missing required eBay attributes"
     end
 
-    # Initialize eBay API connection using shop credentials
-    api_connection = initialize_ebay_api
+    # First verify the listing
+    verify_result = verify_listing
+    unless verify_result[:success]
+      Rails.logger.error "Listing verification failed: #{verify_result[:error]}"
+      return false
+    end
 
-    # Build the eBay listing request payload
-    listing_request = build_listing_request
+    # If verification passed, create the actual listing
+    create_fixed_price_item
+  end
 
-    # Make API call to create listing
-    response = api_connection.create_listing(listing_request)
+  private
 
-    if response && response["listingId"].present?
-      # Extract the eBay listing ID from the response
-      ebay_listing_id = response["listingId"]
+  def verify_listing
+    make_api_call("VerifyAddFixedPriceItem", build_item_request)
+  end
+
+  def create_fixed_price_item
+    result = make_api_call("AddFixedPriceItem", build_item_request)
+
+    if result[:success]
+      doc = result[:response]
+      namespace = { "ebay" => "urn:ebay:apis:eBLBaseComponents" }
+      ebay_item_id = doc.at_xpath("//ebay:ItemID", namespace)&.text
 
       # Create eBay listing record and associate with product
       ebay_listing = @shop.ebay_listings.create!(
-        ebay_id: ebay_listing_id,
+        ebay_item_id: ebay_item_id,
         title: @product.title,
         description: @product.description,
-        price: @product.base_price,
+        sale_price: @product.base_price,
         quantity: @product.base_quantity,
-        status: "active",
-        metadata: response
+        ebay_status: "active",
+        metadata: doc.to_s
       )
 
       # Update the Kuralis product with the eBay listing
@@ -48,78 +61,138 @@ class EbayListingService
 
       true
     else
-      Rails.logger.error "Error creating eBay listing: No listing ID in response"
       false
     end
-  rescue => e
-    Rails.logger.error "Error creating eBay listing: #{e.message}"
-    Rails.logger.error e.backtrace.join("\n")
-    false
   end
 
-  private
+  def make_api_call(call_name, request_body)
+    token = @token_service.fetch_or_refresh_access_token
+    uri = URI("https://api.ebay.com/ws/api.dll")
 
-  def initialize_ebay_api
-    EbayTrading::Api.new(
-      auth_token: @shop.ebay_auth_token,
-      site_id: @shop.ebay_site_id
-    )
-  end
-
-  def build_listing_request
-    {
-      Item: {
-        Title: @product.title,
-        Description: format_description(@product.description),
-        PrimaryCategory: {
-          CategoryID: @ebay_attributes.category_id
-        },
-        StartPrice: @product.base_price,
-        ConditionID: @ebay_attributes.condition_id,
-        ConditionDescription: @ebay_attributes.condition_description,
-        Country: "US", # This should come from shop settings
-        Currency: "USD", # This should come from shop settings
-        DispatchTimeMax: 3,
-        ListingDuration: @ebay_attributes.listing_duration || "GTC",
-        ListingType: "FixedPriceItem",
-        Quantity: @product.base_quantity,
-        ReturnPolicy: {
-          ReturnsAcceptedOption: "ReturnsAccepted",
-          RefundOption: "MoneyBack",
-          ReturnsWithinOption: "Days_30",
-          ShippingCostPaidByOption: "Buyer"
-        },
-        ItemSpecifics: format_item_specifics(@ebay_attributes.item_specifics),
-        PictureDetails: format_picture_details
-      }
+    headers = {
+      "X-EBAY-API-COMPATIBILITY-LEVEL" => "967",
+      "X-EBAY-API-IAF-TOKEN" => token,
+      "X-EBAY-API-DEV-NAME" => ENV["EBAY_DEV_ID"],
+      "X-EBAY-API-APP-NAME" => ENV["EBAY_CLIENT_ID"],
+      "X-EBAY-API-CERT-NAME" => ENV["EBAY_CLIENT_SECRET"],
+      "X-EBAY-API-CALL-NAME" => call_name,
+      "X-EBAY-API-SITEID" => "0",
+      "Content-Type" => "text/xml"
     }
+
+    begin
+      response = Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
+        request = Net::HTTP::Post.new(uri, headers)
+        request.body = request_body
+        http.request(request)
+      end
+
+      if response.is_a?(Net::HTTPSuccess)
+        doc = Nokogiri::XML(response.body)
+        namespace = { "ebay" => "urn:ebay:apis:eBLBaseComponents" }
+
+        if doc.at_xpath("//ebay:Ack", namespace)&.text == "Success"
+          { success: true, response: doc }
+        else
+          error_message = doc.at_xpath("//ebay:Errors/ebay:ShortMessage", namespace)&.text || "Unknown error"
+          Rails.logger.error "eBay API Error (#{call_name}): #{error_message}"
+          { success: false, error: error_message }
+        end
+      else
+        Rails.logger.error "HTTP Error in #{call_name}: #{response.code} - #{response.body}"
+        { success: false, error: "HTTP Error #{response.code}" }
+      end
+    rescue => e
+      Rails.logger.error "Error in #{call_name}: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      { success: false, error: e.message }
+    end
+  end
+
+  def build_item_request
+    <<~XML
+      <?xml version="1.0" encoding="utf-8"?>
+      <#{@api_call_name}Request xmlns="urn:ebay:apis:eBLBaseComponents">
+        <RequesterCredentials>
+          <eBayAuthToken>#{@token_service.fetch_or_refresh_access_token}</eBayAuthToken>
+        </RequesterCredentials>
+        <Item>
+          <Title>#{CGI.escapeHTML(@product.title)}</Title>
+          <Description>#{format_description(@product.description)}</Description>
+          <PrimaryCategory>
+            <CategoryID>#{@ebay_attributes.category_id}</CategoryID>
+          </PrimaryCategory>
+          <StartPrice>#{@product.base_price}</StartPrice>
+          <ConditionID>#{@ebay_attributes.condition_id}</ConditionID>
+          <ConditionDescription>#{CGI.escapeHTML(@ebay_attributes.condition_description.to_s)}</ConditionDescription>
+          <Country>#{@shop.country_code || "US"}</Country>
+          <Currency>#{@shop.currency_code || "USD"}</Currency>
+          <DispatchTimeMax>3</DispatchTimeMax>
+          <ListingDuration>#{@ebay_attributes.listing_duration || "GTC"}</ListingDuration>
+          <Quantity>#{@product.base_quantity}</Quantity>
+          <ReturnPolicy>
+            <ReturnsAcceptedOption>ReturnsAccepted</ReturnsAcceptedOption>
+            <RefundOption>MoneyBack</RefundOption>
+            <ReturnsWithinOption>Days_30</ReturnsWithinOption>
+            <ShippingCostPaidByOption>Buyer</ShippingCostPaidByOption>
+          </ReturnPolicy>
+          #{build_item_specifics_xml}
+          #{build_picture_details_xml}
+          <PaymentMethods>PayPal</PaymentMethods>
+          <PayPalEmailAddress>#{CGI.escapeHTML(@shop.paypal_email)}</PayPalEmailAddress>
+          <ShippingDetails>
+            <ShippingType>Flat</ShippingType>
+            <ShippingServiceOptions>
+              <ShippingServicePriority>1</ShippingServicePriority>
+              <ShippingService>USPSPriority</ShippingService>
+              <ShippingServiceCost>#{@product.shipping_price || "0.00"}</ShippingServiceCost>
+            </ShippingServiceOptions>
+          </ShippingDetails>
+        </Item>
+      </#{@api_call_name}Request>
+    XML
   end
 
   def format_description(description)
-    # Format the description with proper HTML if needed
     "<![CDATA[#{description}]]>"
   end
 
-  def format_item_specifics(specifics)
-    return {} unless specifics.present?
+  def build_item_specifics_xml
+    return "" unless @ebay_attributes.item_specifics.present?
 
-    { NameValueList: specifics.map do |name, value|
-        { Name: name, Value: value }
+    specifics_xml = @ebay_attributes.item_specifics.map do |name, value|
+      <<~XML
+        <NameValueList>
+          <Name>#{CGI.escapeHTML(name)}</Name>
+          <Value>#{CGI.escapeHTML(value)}</Value>
+        </NameValueList>
+      XML
+    end.join
+
+    "<ItemSpecifics>#{specifics_xml}</ItemSpecifics>"
+  end
+
+  def build_picture_details_xml
+    return "" unless @product.images.attached?
+
+    image_upload_service = EbayImageUploadService.new(@shop)
+    uploaded_urls = []
+
+    @product.images.each do |image|
+      result = image_upload_service.upload_image(image)
+      if result[:success]
+        uploaded_urls << result[:url]
+      else
+        Rails.logger.error "Failed to upload image #{image.filename}: #{result[:error]}"
       end
-    }
-  end
-
-  def format_picture_details
-    return {} unless @product.images.attached?
-
-    { PictureURL: @product.images.map { |image| generate_image_url(image) } }
-  end
-
-  def generate_image_url(image)
-    if Rails.env.production?
-      Rails.application.routes.url_helpers.url_for(image)
-    else
-      image.blob.url(expires_in: 1.hour)
     end
+
+    return "" if uploaded_urls.empty?
+
+    urls_xml = uploaded_urls.map do |url|
+      "<PictureURL>#{CGI.escapeHTML(url)}</PictureURL>"
+    end.join
+
+    "<PictureDetails>#{urls_xml}</PictureDetails>"
   end
 end
