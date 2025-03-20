@@ -13,18 +13,18 @@ class KuralisProduct < ApplicationRecord
   validates :status, presence: true
 
   # Scopes
-  scope :active, -> { where(status: 'active') }
+  scope :active, -> { where(status: "active") }
   scope :draft, -> { where(is_draft: true) }
   scope :finalized, -> { where(is_draft: false) }
-  scope :from_ebay, -> { where(source_platform: 'ebay') }
-  scope :from_shopify, -> { where(source_platform: 'shopify') }
+  scope :from_ebay, -> { where(source_platform: "ebay") }
+  scope :from_shopify, -> { where(source_platform: "shopify") }
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
   after_update :schedule_platform_updates, if: :saved_change_to_base_quantity?
 
   # Handle tags input
   def tags=(value)
     if value.is_a?(String)
-      super(value.split(',').map(&:strip))
+      super(value.split(",").map(&:strip))
     else
       super
     end
@@ -33,7 +33,7 @@ class KuralisProduct < ApplicationRecord
   def ebay_attributes
     ebay_product_attribute || build_ebay_product_attribute
   end
-  
+
   # Method to check if product has eBay attributes
   def has_ebay_attributes?
     ebay_product_attribute.present?
@@ -51,20 +51,20 @@ class KuralisProduct < ApplicationRecord
   def sync_needed?
     last_synced_at.nil? || last_synced_at < updated_at
   end
-  
+
   # Draft methods
   def draft?
     is_draft
   end
-  
+
   def finalized?
     !is_draft
   end
-  
+
   def finalize!
     update!(is_draft: false)
   end
-  
+
   # Create a draft product from AI analysis
   def self.create_from_ai_analysis(analysis, shop)
     draft_product = shop.kuralis_products.new(
@@ -75,45 +75,54 @@ class KuralisProduct < ApplicationRecord
       brand: analysis.suggested_brand,
       condition: analysis.suggested_condition,
       tags: analysis.suggested_tags,
-      status: 'active',
+      status: "active",
       is_draft: true,
-      source_platform: 'ai',
+      source_platform: "ai",
       ai_product_analysis_id: analysis.id
     )
-    
+
     # Attach the image from the analysis
     if analysis.image_attachment.attached?
       draft_product.images.attach(analysis.image_attachment.blob)
     end
-    
+
     # Save the draft product first - without validating ebay_product_attributes
     if draft_product.save
       # Now that the product is saved with an ID, create eBay product attributes if available
       if analysis.suggested_ebay_category.present?
-        # Ensure item_specifics is a hash
-        item_specifics = if analysis.suggested_item_specifics.is_a?(Hash)
-                          analysis.suggested_item_specifics
-                        else
-                          {}
-                        end
-        
         # Create eBay product attribute directly
         ebay_attr = EbayProductAttribute.create(
           kuralis_product_id: draft_product.id,
-          category_id: analysis.suggested_ebay_category,
-          item_specifics: item_specifics
+          category_id: analysis.suggested_ebay_category
         )
-        
+
+        # Get all item specifics for the category
+        category_specifics = ebay_attr.find_or_initialize_item_specifics(shop)
+
+        # Map AI values to the category specifics
+        mapped_specifics = Ai::ItemSpecificsMapper.map_to_ebay_format(
+          analysis.suggested_item_specifics,
+          category_specifics
+        )
+
+        # Create a complete hash of all category specifics, with mapped values or empty strings
+        all_specifics = category_specifics.each_with_object({}) do |aspect, hash|
+          hash[aspect["name"]] = mapped_specifics[aspect["name"]] || ""
+        end
+
+        # Update the eBay attribute with all specifics
+        ebay_attr.update(item_specifics: all_specifics)
+
         # If the eBay attribute can't be saved, log the error but continue
         unless ebay_attr.persisted?
           Rails.logger.error "Failed to save eBay attributes: #{ebay_attr.errors.full_messages.join(', ')}"
         end
       end
-      
+
       # Mark the analysis as processed
       analysis.mark_as_processed!
     end
-    
+
     draft_product
   end
 
@@ -128,12 +137,12 @@ class KuralisProduct < ApplicationRecord
         Rails.logger.error "Failed to cache image from #{url}: #{e.message}"
       end
     end
-    
+
     update(images_last_synced_at: Time.current)
   end
-  
+
   private
-  
+
   def schedule_platform_updates
     # Queue jobs to update associated platforms
     Rails.logger.info "Scheduling platform updates for #{id}"
@@ -143,10 +152,10 @@ class KuralisProduct < ApplicationRecord
     #   Ebay::UpdateListingJob.perform_later(ebay_listing.id)
     #   Rails.logger.info "Scheduled eBay update for listing #{ebay_listing.id} after inventory change"
     # end
-    
+
     # if shopify_product.present?
     #   Shopify::UpdateProductJob.perform_later(shopify_product.id)
     #   Rails.logger.info "Scheduled Shopify update for product #{shopify_product.id} after inventory change"
     # end
   end
-end 
+end
