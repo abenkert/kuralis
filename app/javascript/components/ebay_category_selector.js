@@ -9,6 +9,7 @@ class EbayCategorySelector {
       minLength: 2,
       delay: 300,
       marketplaceId: 'EBAY_US',
+      existingItemSpecifics: null,
       ...options
     };
     
@@ -19,6 +20,9 @@ class EbayCategorySelector {
   }
   
   init() {
+    // Log the options to debug
+    console.log('Initializing EbayCategorySelector with options:', this.options);
+    
     // Create the UI elements
     this.createElements();
     
@@ -104,10 +108,14 @@ class EbayCategorySelector {
   initializeWithExistingValue() {
     const categoryId = this.hiddenInput.value;
     if (categoryId) {
+      console.log(`Initializing with existing category ID: ${categoryId}`);
+      console.log('Existing item specifics from options:', this.options.existingItemSpecifics);
+      
       // Fetch category details and display them
       fetch(`/kuralis/ebay_categories/${categoryId}.json`)
         .then(response => response.json())
         .then(category => {
+          console.log('Fetched category details:', category);
           this.selectCategory(category);
         })
         .catch(error => console.error('Error fetching category:', error));
@@ -184,6 +192,10 @@ class EbayCategorySelector {
   }
   
   selectCategory(category) {
+    // Store current item specifics values before switching
+    const currentValues = this.getCurrentItemSpecificsValues();
+    console.log('Current item specifics values before category switch:', currentValues);
+    
     this.selectedCategory = category;
     this.hiddenInput.value = category.category_id;
     
@@ -224,34 +236,35 @@ class EbayCategorySelector {
     // Clear the search input
     this.searchInput.value = '';
     
-    // Fetch item specifics for this category
-    this.fetchItemSpecifics(category.category_id);
+    // Fetch item specifics for this category and pass current values
+    console.log(`Fetching item specifics for category ID: ${category.category_id}`);
+    this.fetchItemSpecifics(category.category_id, currentValues);
     
     // Trigger change event on hidden input
     const event = new Event('change', { bubbles: true });
     this.hiddenInput.dispatchEvent(event);
   }
   
-  clearSelection() {
-    this.selectedCategory = null;
-    this.hiddenInput.value = '';
-    this.selectedDisplay.innerHTML = '';
-    this.selectedDisplay.classList.add('d-none');
-    
-    // Clear item specifics
-    this.clearItemSpecifics();
-    
-    // Trigger change event on hidden input
-    const event = new Event('change', { bubbles: true });
-    this.hiddenInput.dispatchEvent(event);
+  getCurrentItemSpecificsValues() {
+    const values = {};
+    const container = document.getElementById('ebay-item-specifics-container');
+    if (!container) return values;
+
+    container.querySelectorAll('input, select').forEach(field => {
+      const name = field.getAttribute('name');
+      if (name && name.includes('[item_specifics]')) {
+        // Extract the item specific name from the field name
+        const match = name.match(/\[item_specifics\]\[(.*?)\]/);
+        if (match) {
+          values[match[1]] = field.value;
+        }
+      }
+    });
+
+    return values;
   }
   
-  hideResults() {
-    this.resultsContainer.classList.remove('show');
-  }
-  
-  // Add these new methods for item specifics
-  fetchItemSpecifics(categoryId) {
+  fetchItemSpecifics(categoryId, currentValues = {}) {
     const url = `/kuralis/ebay_categories/${categoryId}/item_specifics.json`;
     
     // Show loading indicator
@@ -260,7 +273,31 @@ class EbayCategorySelector {
     fetch(url)
       .then(response => response.json())
       .then(itemSpecifics => {
-        this.renderItemSpecificsForm(itemSpecifics);
+        // Determine which values to use:
+        // 1. For initial load with existing product data, use the database values
+        // 2. For category switching, use the current form values
+        let valuesToUse = currentValues;
+        
+        // If this is the initial load and we have stored item specifics, use those
+        if (this.options.existingItemSpecifics && 
+            this.hiddenInput.value === categoryId && 
+            Object.keys(currentValues).length === 0) {
+          
+          console.log('Using existing item specifics from database:', this.options.existingItemSpecifics);
+          
+          // Format the existing item specifics to match our field format
+          valuesToUse = {};
+          Object.entries(this.options.existingItemSpecifics).forEach(([key, value]) => {
+            // Skip null/undefined values
+            if (value === null || value === undefined) return;
+            
+            // Convert keys to snake_case for field names
+            const fieldName = key.replace(/\s+/g, '_').toLowerCase();
+            valuesToUse[fieldName] = value;
+          });
+        }
+        
+        this.renderItemSpecificsForm(itemSpecifics, valuesToUse);
       })
       .catch(error => {
         console.error('Error fetching item specifics:', error);
@@ -325,7 +362,7 @@ class EbayCategorySelector {
     }
   }
   
-  renderItemSpecificsForm(itemSpecifics) {
+  renderItemSpecificsForm(itemSpecifics, currentValues = {}) {
     const container = this.getOrCreateItemSpecificsContainer();
     
     // Clear existing content
@@ -359,7 +396,7 @@ class EbayCategorySelector {
       requiredHeading.innerHTML = '<i class="fas fa-asterisk me-1"></i> Required Fields';
       container.appendChild(requiredHeading);
       
-      this.createSpecificFields(container, requiredSpecifics);
+      this.createSpecificFields(container, requiredSpecifics, currentValues);
     }
     
     // Create form fields for optional item specifics
@@ -369,18 +406,18 @@ class EbayCategorySelector {
       optionalHeading.innerHTML = '<i class="fas fa-plus-circle me-1"></i> Optional Fields';
       container.appendChild(optionalHeading);
       
-      this.createSpecificFields(container, optionalSpecifics);
+      this.createSpecificFields(container, optionalSpecifics, currentValues);
     }
-    
-    // After rendering is complete, try to populate with existing values
-    this.populateExistingItemSpecifics();
   }
   
-  createSpecificFields(container, specifics) {
+  createSpecificFields(container, specifics, currentValues = {}) {
     // Create a row for the fields
     const row = document.createElement('div');
     row.className = 'row g-3';
     container.appendChild(row);
+    
+    // Add logging to help debug
+    console.log('Creating specific fields with values:', currentValues);
     
     // Create form fields for each item specific
     specifics.forEach(specific => {
@@ -457,6 +494,19 @@ class EbayCategorySelector {
         input.required = true;
       }
       
+      // Try different ways to find a matching value
+      if (currentValues[fieldName] !== undefined) {
+        console.log(`Setting value for ${fieldName}: ${currentValues[fieldName]}`);
+        input.value = currentValues[fieldName];
+      } else {
+        // Try with the original specific name (without snake_case conversion)
+        const originalFieldName = specific.name.toLowerCase();
+        if (currentValues[originalFieldName] !== undefined) {
+          console.log(`Setting value for ${fieldName} using original name: ${currentValues[originalFieldName]}`);
+          input.value = currentValues[originalFieldName];
+        }
+      }
+      
       // Assemble the form group
       formGroup.appendChild(label);
       formGroup.appendChild(input);
@@ -474,45 +524,22 @@ class EbayCategorySelector {
     });
   }
   
-  populateExistingItemSpecifics() {
-    // Check if we have existing item specifics data in options
-    if (!this.options.existingItemSpecifics) {
-      console.log('No existing item specifics data found in options');
-      return;
-    }
+  clearSelection() {
+    this.selectedCategory = null;
+    this.hiddenInput.value = '';
+    this.selectedDisplay.innerHTML = '';
+    this.selectedDisplay.classList.add('d-none');
     
-    try {
-      const itemSpecificsData = this.options.existingItemSpecifics;
-      console.log('Found existing item specifics:', itemSpecificsData);
-      
-      // Iterate through the data and populate form fields
-      Object.entries(itemSpecificsData).forEach(([key, value]) => {
-        // Skip empty values
-        if (!value) return;
-        
-        // Convert the key to the format used in field names
-        const fieldName = key.replace(/\s+/g, '_').toLowerCase();
-        const selector = `[name="kuralis_product[ebay_product_attribute_attributes][item_specifics][${fieldName}]"]`;
-        
-        const field = document.querySelector(selector);
-        if (field) {
-          console.log(`Populating field ${fieldName} with value: ${value}`);
-          field.value = value;
-        } else {
-          // Try with original case
-          const altSelector = `[name="kuralis_product[ebay_product_attribute_attributes][item_specifics][${key}]"]`;
-          const altField = document.querySelector(altSelector);
-          if (altField) {
-            console.log(`Populating field ${key} with value: ${value}`);
-            altField.value = value;
-          } else {
-            console.log(`Could not find field for item specific: ${key}`);
-          }
-        }
-      });
-    } catch (error) {
-      console.error('Error processing item specifics data:', error);
-    }
+    // Clear item specifics
+    this.clearItemSpecifics();
+    
+    // Trigger change event on hidden input
+    const event = new Event('change', { bubbles: true });
+    this.hiddenInput.dispatchEvent(event);
+  }
+  
+  hideResults() {
+    this.resultsContainer.classList.remove('show');
   }
 }
 

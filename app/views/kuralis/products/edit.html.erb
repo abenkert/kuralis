@@ -204,7 +204,10 @@
                         class: "form-control", 
                         data: { 
                           ebay_category_selector: true, 
-                          options: { placeholder: "Search for eBay category..." }.to_json 
+                          options: { 
+                            placeholder: "Search for eBay category...",
+                            existingItemSpecifics: @product.ebay_product_attribute&.item_specifics.presence
+                          }.to_json 
                         } 
                     %>
                     <small class="form-text text-muted">Search for the most specific category for your product</small>
@@ -506,5 +509,34 @@
   
   .image-preview-remove:hover {
     background: rgba(255,255,255,1);
+  }
+
+  /* Item Specifics Styles */
+  .item-specifics-container {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+  }
+
+  .item-specifics-container .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .item-specifics-container .form-label {
+    font-weight: 500;
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+  }
+
+  .item-specifics-container .form-control {
+    border: 1px solid #e3e6f0;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .item-specifics-container .form-control:focus {
+    border-color: #4e73df;
+    box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.25);
   }
 </style> 
