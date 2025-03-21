@@ -45,10 +45,6 @@
     </div>
   </div>
 
-  <%= form_tag process_bulk_listing_kuralis_products_path, 
-      method: :post, 
-      id: 'products-form',
-      data: { controller: "bulk-actions" } do %>
     <div class="card">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -111,7 +107,7 @@
             </thead>
             <tbody>
               <% @products.each do |product| %>
-                <tr>
+                <tr id="<%= dom_id(product) %>">
                   <td>
                     <%= check_box_tag "product_ids[]", product.id, false, 
                         class: 'form-check-input product-checkbox',
@@ -225,10 +221,10 @@
                           </li>
                         <% end %>
                         <li>
-                          <%= button_to kuralis_product_path(product), 
+                          <%= button_to kuralis_product_path(product.id), 
                               method: :delete,
                               class: "dropdown-item text-danger",
-                              form: { data: { turbo_confirm: "Are you sure you want to delete this product?" } } do %>
+                              data: { turbo_method: :delete, turbo_confirm: "Are you sure you want to delete this product?" } do %>
                             <i class="bi bi-trash me-2"></i>Delete
                           <% end %>
                         </li>
@@ -251,7 +247,7 @@
         </div>
       </div>
     </div>
-  <% end %>
+
 </div>
 
 <%= javascript_tag do %>

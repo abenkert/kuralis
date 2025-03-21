@@ -8,4 +8,4 @@ module Ebay
                             .per(25) # Adjust number per page as needed
     end
   end
-end 
+end
