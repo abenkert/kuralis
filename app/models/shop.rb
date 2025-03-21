@@ -13,6 +13,8 @@ class Shop < ApplicationRecord
   has_many :warehouses
   has_one :default_warehouse, -> { where(is_default: true) }, class_name: "Warehouse"
 
+  after_create :create_default_warehouse
+
   def api_version
     ShopifyApp.configuration.api_version
   end
@@ -54,5 +56,27 @@ class Shop < ApplicationRecord
       ebay: ebay_listings_count,
       unlinked: unlinked_products_count
     }
+  end
+
+  private
+
+  def create_default_warehouse
+    # Create a default warehouse with the shop's address information if available
+    address = self.address1.presence || "Default Location"
+    city = self.city.presence || "New York"
+    state = self.province.presence || "NY"
+    zip = self.zip.presence || "11004"
+    country_code = self.country_code.presence || "US"
+
+    warehouses.create!(
+      name: "Default Warehouse",
+      address1: address,
+      city: city,
+      state: state,
+      postal_code: zip,
+      country_code: country_code,
+      is_default: true,
+      active: true
+    )
   end
 end

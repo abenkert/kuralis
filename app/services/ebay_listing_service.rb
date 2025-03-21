@@ -10,7 +10,7 @@ class EbayListingService
 
   def create_listing
     # Skip if already has eBay listing
-    return false if @product.ebay_listing.present?
+    return false if @product.ebay_listing.present? && @product.ebay_listing.ebay_status == "active"
 
     # Ensure required eBay attributes are present
     unless @product.has_ebay_attributes?
@@ -24,8 +24,9 @@ class EbayListingService
       return false
     end
 
+    p verify_result
     # If verification passed, create the actual listing
-    create_fixed_price_item
+    # create_fixed_price_item
   end
 
   private
@@ -128,17 +129,17 @@ class EbayListingService
           <Country>US</Country>
           <Currency>USD</Currency>
           <Location>US</Location>
-          <PostalCode>#{@shop.postal_code}</PostalCode>
+          <PostalCode>#{@product.warehouse.postal_code}</PostalCode>
           <ListingDuration>GTC</ListingDuration>
           <ListingType>FixedPriceItem</ListingType>
           <Quantity>#{@product.base_quantity}</Quantity>
           #{build_item_specifics_xml}
           #{build_picture_details_xml}
+          <PaymentPolicy>
+            <PaymentPolicyID>#{@ebay_attributes.payment_policy_id}</PaymentPolicyID>
+          </PaymentPolicy>
           <ReturnPolicy>
-            <ReturnsAcceptedOption>ReturnsAccepted</ReturnsAcceptedOption>
-            <RefundOption>MoneyBack</RefundOption>
-            <ReturnsWithinOption>Days_30</ReturnsWithinOption>
-            <ShippingCostPaidByOption>Buyer</ShippingCostPaidByOption>
+            <ReturnPolicyID>#{@ebay_attributes.return_policy_id}</ReturnPolicyID>
           </ReturnPolicy>
           <ShippingDetails>
             <ShippingProfileID>#{@ebay_attributes.shipping_profile_id}</ShippingProfileID>

@@ -161,130 +161,7 @@
           </div>
 
           <!-- eBay Info Tab -->
-          <div class="tab-pane fade" id="ebay-info" role="tabpanel" aria-labelledby="ebay-tab">
-            <div class="row mb-3">
-              <div class="col-md-12">
-                <p class="text-muted mb-4">
-                  Configure eBay-specific details for this product. These settings will be used when you list this product on eBay.
-                </p>
-              </div>
-            </div>
-            
-            <div class="row mb-3">
-              <div class="col-md-6">
-                <div class="form-group">
-                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
-                    <%= ebay_fields.label :category_id, "eBay Category", class: "form-label" %>
-                    <%= ebay_fields.text_field :category_id, 
-                        class: "form-control", 
-                        data: { 
-                          ebay_category_selector: true, 
-                          options: { placeholder: "Search for eBay category..." }.to_json 
-                        } 
-                    %>
-                    <small class="form-text text-muted">Search for the most specific category for your product</small>
-                  <% end %>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="form-group">
-                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
-                    <%= ebay_fields.label :store_category_id, "eBay Store Category", class: "form-label" %>
-                    <%= ebay_fields.select :store_category_id, 
-                        current_shop.shopify_ebay_account&.store_categories&.map { |c| [c["name"], c["category_id"]] } || [], 
-                        { include_blank: "Select Store Category" }, 
-                        { class: "form-select" } 
-                    %>
-                  <% end %>
-                </div>
-              </div>
-            </div>
-            
-            <div class="row mb-3">
-              <div class="col-md-6">
-                <div class="form-group">
-                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
-                    <%= ebay_fields.label :condition_id, "eBay Condition", class: "form-label" %>
-                    <%= ebay_fields.select :condition_id, 
-                        [
-                          ["New", "1000"],
-                          ["New other (see details)", "1500"],
-                          ["New with defects", "1750"],
-                          ["Manufacturer refurbished", "2000"],
-                          ["Seller refurbished", "2500"],
-                          ["Used", "3000"],
-                          ["Very Good", "4000"],
-                          ["Good", "5000"],
-                          ["Acceptable", "6000"],
-                          ["For parts or not working", "7000"]
-                        ], 
-                        { include_blank: "Select Condition" }, 
-                        { class: "form-select" } 
-                    %>
-                  <% end %>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="form-group">
-                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
-                    <%= ebay_fields.label :listing_duration, "Listing Duration", class: "form-label" %>
-                    <%= ebay_fields.select :listing_duration, 
-                        [
-                          ["Good 'Til Cancelled", "GTC"],
-                          ["1 Day", "Days_1"],
-                          ["3 Days", "Days_3"],
-                          ["5 Days", "Days_5"],
-                          ["7 Days", "Days_7"],
-                          ["10 Days", "Days_10"],
-                          ["30 Days", "Days_30"]
-                        ], 
-                        { include_blank: "Select Duration" }, 
-                        { class: "form-select" } 
-                    %>
-                  <% end %>
-                </div>
-              </div>
-            </div>
-            
-            <div class="row mb-3">
-              <div class="col-md-6">
-                <div class="form-group">
-                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
-                    <%= ebay_fields.label :shipping_profile_id, "Shipping Profile", class: "form-label" %>
-                    <%= ebay_fields.select :shipping_profile_id, 
-                        current_shop.shopify_ebay_account&.shipping_profiles&.map { |p| [p["profileName"], p["profileId"]] } || [], 
-                        { include_blank: "Select Shipping Profile" }, 
-                        { class: "form-select" } 
-                    %>
-                  <% end %>
-                </div>
-              </div>
-            </div>
-            
-            <div class="row mb-3">
-              <div class="col-md-12">
-                <div class="form-group">
-                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
-                    <%= ebay_fields.label :condition_description, "Condition Description", class: "form-label" %>
-                    <%= ebay_fields.text_area :condition_description, class: "form-control", rows: 3 %>
-                    <small class="form-text text-muted">Provide details about the condition of your item</small>
-                  <% end %>
-                </div>
-              </div>
-            </div>
-            
-            <div class="row mb-3">
-              <div class="col-md-12">
-                <div class="form-check form-switch">
-                  <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
-                    <%= ebay_fields.check_box :best_offer_enabled, class: "form-check-input", role: "switch" %>
-                    <%= ebay_fields.label :best_offer_enabled, "Enable Best Offer", class: "form-check-label" %>
-                  <% end %>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+         <%= render 'kuralis/products/ebay_tab_content', form: form, product: @product %>
         
         <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
           <%= link_to "Cancel", kuralis_products_path, class: "btn btn-outline-secondary me-md-2" %>
@@ -381,6 +258,9 @@
     const fileInput = document.getElementById('product_images');
     const previewContainer = document.getElementById('imagePreviewContainer');
     
+    // Store selected files
+    let selectedFiles = [];
+    
     // Form validation
     form.addEventListener('submit', function(event) {
       if (!form.checkValidity()) {
@@ -423,7 +303,10 @@
     dropzone.addEventListener('drop', handleDrop, false);
     
     // Handle file input change
-    fileInput.addEventListener('change', handleFiles, false);
+    fileInput.addEventListener('change', function(e) {
+      const files = Array.from(e.target.files);
+      handleFileSelection(files);
+    }, false);
     
     function preventDefaults(e) {
       e.preventDefault();
@@ -440,22 +323,40 @@
     
     function handleDrop(e) {
       const dt = e.dataTransfer;
-      const files = dt.files;
-      
-      handleFiles({ target: { files: files } });
+      const files = Array.from(dt.files);
+      handleFileSelection(files);
     }
     
-    function handleFiles(e) {
-      const files = [...e.target.files];
+    function handleFileSelection(files) {
+      // Add new files to our collection
+      selectedFiles = [...selectedFiles, ...files];
       
-      files.forEach(previewFile);
+      // Clear preview container to rebuild it
+      previewContainer.innerHTML = '';
       
-      // Update the actual file input with the new files
-      // This is a bit tricky since we can't directly modify the files property
-      // In a real implementation, you might need to use FormData when submitting
+      // Preview all selected files
+      selectedFiles.forEach((file, index) => {
+        previewFile(file, index);
+      });
+      
+      // Update the form with our files using a DataTransfer object
+      updateFormFiles();
     }
     
-    function previewFile(file) {
+    function updateFormFiles() {
+      // Create a new DataTransfer object
+      const dataTransfer = new DataTransfer();
+      
+      // Add all selected files to it
+      selectedFiles.forEach(file => {
+        dataTransfer.items.add(file);
+      });
+      
+      // Set the file input's files to our DataTransfer files
+      fileInput.files = dataTransfer.files;
+    }
+    
+    function previewFile(file, index) {
       if (!file.type.match('image.*')) return;
       
       const reader = new FileReader();
@@ -463,6 +364,7 @@
       reader.onload = function(e) {
         const preview = document.createElement('div');
         preview.className = 'image-preview-item';
+        preview.dataset.index = index;
         
         const img = document.createElement('img');
         img.src = e.target.result;
@@ -471,8 +373,17 @@
         removeBtn.className = 'image-preview-remove';
         removeBtn.innerHTML = '<i class="fas fa-times"></i>';
         removeBtn.addEventListener('click', function() {
-          preview.remove();
-          // In a real implementation, you would also need to update the actual file input
+          // Remove this file from our collection
+          selectedFiles = selectedFiles.filter((_, i) => i !== index);
+          
+          // Rebuild preview
+          previewContainer.innerHTML = '';
+          selectedFiles.forEach((file, idx) => {
+            previewFile(file, idx);
+          });
+          
+          // Update form files
+          updateFormFiles();
         });
         
         preview.appendChild(img);

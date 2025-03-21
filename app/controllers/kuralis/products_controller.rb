@@ -412,31 +412,14 @@ module Kuralis
 
     def product_params
       params.require(:kuralis_product).permit(
-        :title,
-        :description,
-        :base_price,
-        :base_quantity,
-        :sku,
-        :brand,
-        :condition,
-        :location,
-        :weight_oz,
-        :is_draft,
-        :ai_product_analysis_id,
-        images: [],
-        images_to_delete: [],
-        tags: [],
-        product_attributes: {},
+        :title, :sku, :description, :base_price, :base_quantity, :weight_oz,
+        :brand, :condition, :location, :tags, :warehouse_id,
+        images: [], images_to_delete: [],
         ebay_product_attribute_attributes: [
-          :id,
-          :condition_id,
-          :condition_description,
-          :category_id,
-          :store_category_id,
-          :shipping_profile_id,
-          :listing_duration,
+          :id, :category_id, :store_category_id, :condition_id, :condition_description,
+          :listing_duration, :shipping_profile_id, :return_profile_id, :payment_profile_id,
           :best_offer_enabled,
-          item_specifics: {}
+          { item_specifics: {} }
         ]
       )
     end
