@@ -125,28 +125,23 @@ class EbayListingService
           <StartPrice>#{@product.base_price}</StartPrice>
           <ConditionID>#{@ebay_attributes.condition_id}</ConditionID>
           <ConditionDescription>#{CGI.escapeHTML(@ebay_attributes.condition_description.to_s)}</ConditionDescription>
-          <Country>#{@shop.country_code || "US"}</Country>
-          <Currency>#{@shop.currency_code || "USD"}</Currency>
-          <DispatchTimeMax>3</DispatchTimeMax>
-          <ListingDuration>#{@ebay_attributes.listing_duration || "GTC"}</ListingDuration>
+          <Country>US</Country>
+          <Currency>USD</Currency>
+          <Location>US</Location>
+          <PostalCode>#{@shop.postal_code}</PostalCode>
+          <ListingDuration>GTC</ListingDuration>
+          <ListingType>FixedPriceItem</ListingType>
           <Quantity>#{@product.base_quantity}</Quantity>
+          #{build_item_specifics_xml}
+          #{build_picture_details_xml}
           <ReturnPolicy>
             <ReturnsAcceptedOption>ReturnsAccepted</ReturnsAcceptedOption>
             <RefundOption>MoneyBack</RefundOption>
             <ReturnsWithinOption>Days_30</ReturnsWithinOption>
             <ShippingCostPaidByOption>Buyer</ShippingCostPaidByOption>
           </ReturnPolicy>
-          #{build_item_specifics_xml}
-          #{build_picture_details_xml}
-          <PaymentMethods>PayPal</PaymentMethods>
-          <PayPalEmailAddress>#{CGI.escapeHTML(@shop.paypal_email)}</PayPalEmailAddress>
           <ShippingDetails>
-            <ShippingType>Flat</ShippingType>
-            <ShippingServiceOptions>
-              <ShippingServicePriority>1</ShippingServicePriority>
-              <ShippingService>USPSPriority</ShippingService>
-              <ShippingServiceCost>#{@product.shipping_price || "0.00"}</ShippingServiceCost>
-            </ShippingServiceOptions>
+            <ShippingProfileID>#{@ebay_attributes.shipping_profile_id}</ShippingProfileID>
           </ShippingDetails>
         </Item>
       </#{@api_call_name}Request>

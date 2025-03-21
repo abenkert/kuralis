@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_03_10_215452) do
+ActiveRecord::Schema[8.0].define(version: 2025_03_21_004039) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -113,7 +113,11 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_10_215452) do
     t.string "store_category_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "payment_profile_id"
+    t.string "return_profile_id"
     t.index ["kuralis_product_id"], name: "index_ebay_product_attributes_on_kuralis_product_id", unique: true
+    t.index ["payment_profile_id"], name: "index_ebay_product_attributes_on_payment_profile_id"
+    t.index ["return_profile_id"], name: "index_ebay_product_attributes_on_return_profile_id"
   end
 
   create_table "inventory_transactions", force: :cascade do |t|
@@ -269,6 +273,10 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_10_215452) do
     t.jsonb "shipping_profiles", default: [], null: false
     t.jsonb "shipping_profile_weights", default: {}, null: false
     t.jsonb "category_tag_mappings", default: {}, null: false
+    t.jsonb "payment_profiles", default: []
+    t.jsonb "return_profiles", default: []
+    t.index ["payment_profiles"], name: "index_shopify_ebay_accounts_on_payment_profiles", using: :gin
+    t.index ["return_profiles"], name: "index_shopify_ebay_accounts_on_return_profiles", using: :gin
     t.index ["shop_id"], name: "index_shopify_ebay_accounts_on_shop_id"
   end
 
