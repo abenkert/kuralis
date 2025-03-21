@@ -1,9 +1,10 @@
 class SettingsController < AuthenticatedController
-  layout 'authenticated'
+  layout "authenticated"
 
   def index
     @shop = current_shop
     @ebay_account_linked = @shop&.shopify_ebay_account.present?
+    @warehouses = @shop.warehouses.order(is_default: :desc, name: :asc)
   end
 
   def sync_locations
@@ -24,17 +25,17 @@ class SettingsController < AuthenticatedController
     client = ShopifyAPI::Clients::Graphql::Admin.new(session: @shop.shopify_session)
     response = client.query(query: locations_query)
 
-    if response.body['data'] && response.body['data']['locations']
-      locations = response.body['data']['locations']['edges'].each_with_object({}) do |edge, hash|
-        node = edge['node']
-        hash[node['id']] = {
-          "name" => node['name'],
-          "active" => node['active']
+    if response.body["data"] && response.body["data"]["locations"]
+      locations = response.body["data"]["locations"]["edges"].each_with_object({}) do |edge, hash|
+        node = edge["node"]
+        hash[node["id"]] = {
+          "name" => node["name"],
+          "active" => node["active"]
         }
       end
 
       @shop.update!(locations: locations)
-      
+
       # Set default location if none set and locations exist
       if @shop.default_location_id.blank? && locations.any?
         @shop.update(default_location_id: locations.keys.first)
@@ -78,7 +79,7 @@ class SettingsController < AuthenticatedController
     @shop = current_shop
     if @shop.update(default_location_params)
       respond_to do |format|
-        format.turbo_stream { 
+        format.turbo_stream {
           render turbo_stream: turbo_stream.replace(
             "locations_form",
             partial: "settings/locations_form",
@@ -89,7 +90,7 @@ class SettingsController < AuthenticatedController
       end
     else
       respond_to do |format|
-        format.turbo_stream { 
+        format.turbo_stream {
           render turbo_stream: turbo_stream.replace(
             "locations_form",
             partial: "settings/locations_form",

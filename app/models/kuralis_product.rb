@@ -3,6 +3,8 @@ class KuralisProduct < ApplicationRecord
   belongs_to :shopify_product, optional: true
   belongs_to :ebay_listing, optional: true
   belongs_to :ai_product_analysis, optional: true
+  belongs_to :warehouse, optional: true
+  before_save :ensure_warehouse
   has_many_attached :images
   has_one :ebay_product_attribute, dependent: :destroy
   accepts_nested_attributes_for :ebay_product_attribute, reject_if: :all_blank
@@ -182,5 +184,9 @@ class KuralisProduct < ApplicationRecord
     #   Shopify::UpdateProductJob.perform_later(shopify_product.id)
     #   Rails.logger.info "Scheduled Shopify update for product #{shopify_product.id} after inventory change"
     # end
+  end
+
+  def ensure_warehouse
+    self.warehouse ||= shop.warehouses.find_by(is_default: true)
   end
 end

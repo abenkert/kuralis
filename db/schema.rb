@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_03_21_004039) do
+ActiveRecord::Schema[8.0].define(version: 2025_03_21_132055) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -180,6 +180,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_21_004039) do
     t.jsonb "tags", default: [], null: false
     t.bigint "ai_product_analysis_id"
     t.boolean "is_draft", default: false
+    t.bigint "warehouse_id"
     t.index ["ai_product_analysis_id"], name: "index_kuralis_products_on_ai_product_analysis_id"
     t.index ["ebay_listing_id"], name: "index_kuralis_products_on_ebay_listing_id"
     t.index ["is_draft"], name: "index_kuralis_products_on_is_draft"
@@ -189,6 +190,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_21_004039) do
     t.index ["source_platform"], name: "index_kuralis_products_on_source_platform"
     t.index ["status"], name: "index_kuralis_products_on_status"
     t.index ["tags"], name: "index_kuralis_products_on_tags", using: :gin
+    t.index ["warehouse_id"], name: "index_kuralis_products_on_warehouse_id"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -335,6 +337,24 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_21_004039) do
     t.index ["shop_id"], name: "index_users_on_shop_id"
   end
 
+  create_table "warehouses", force: :cascade do |t|
+    t.bigint "shop_id", null: false
+    t.string "name", null: false
+    t.string "address1"
+    t.string "address2"
+    t.string "city"
+    t.string "state"
+    t.string "postal_code", null: false
+    t.string "country_code", null: false
+    t.boolean "is_default", default: false
+    t.boolean "active", default: true
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["postal_code"], name: "index_warehouses_on_postal_code"
+    t.index ["shop_id", "is_default"], name: "index_warehouses_on_shop_id_and_is_default"
+    t.index ["shop_id"], name: "index_warehouses_on_shop_id"
+  end
+
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "ai_product_analyses", "shops"
@@ -348,6 +368,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_21_004039) do
   add_foreign_key "kuralis_products", "ebay_listings", on_delete: :nullify
   add_foreign_key "kuralis_products", "shopify_products", on_delete: :nullify
   add_foreign_key "kuralis_products", "shops"
+  add_foreign_key "kuralis_products", "warehouses"
   add_foreign_key "notifications", "shops"
   add_foreign_key "order_items", "kuralis_products"
   add_foreign_key "order_items", "orders"
@@ -355,4 +376,5 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_21_004039) do
   add_foreign_key "shopify_ebay_accounts", "shops"
   add_foreign_key "shopify_products", "shops"
   add_foreign_key "users", "shops"
+  add_foreign_key "warehouses", "shops"
 end

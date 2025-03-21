@@ -1,0 +1,24 @@
+<div class="settings-section mb-4">
+  <div class="settings-header">
+    <h3 class="border-bottom pb-2">
+      <i class="bi bi-gear me-2"></i>Kuralis Settings
+    </h3>
+  </div>
+
+  <div class="accordion">
+    <!-- Warehouses Section -->
+    <div class="accordion-item">
+      <h2 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#warehouses">
+          Warehouses
+        </button>
+      </h2>
+      
+      <div id="warehouses" class="accordion-collapse collapse show">
+        <div class="accordion-body">
+          <%= render "settings/warehouses" %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div> 

@@ -1,0 +1,16 @@
+<div>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Manage Shipping Locations</h5>
+    <%= link_to new_warehouse_path, 
+        class: "btn btn-outline-primary btn-sm",
+        data: { turbo_frame: "modal_content" } do %>
+      <i class="bi bi-plus-circle me-1"></i>Add Warehouse
+    <% end %>
+  </div>
+
+  <%= turbo_frame_tag "warehouses_list" do %>
+    <%= render "settings/warehouses_list", shop: @shop %>
+  <% end %>
+
+  <%= turbo_frame_tag "modal_content" %>
+</div> 
