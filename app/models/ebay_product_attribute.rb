@@ -1,3 +1,17 @@
+# This model stores the configuration and preferences for how a Kuralis Product
+# should be listed on eBay. It serves as a template/draft for future eBay listings
+# and is NOT a representation of an actual eBay listing (see EbayListing model for that).
+#
+# Key differences from EbayListing:
+# - This stores listing preferences BEFORE a product is listed on eBay
+# - Does not have an ebay_item_id as it represents potential/future listings
+# - One-to-one relationship with KuralisProduct
+# - Source of truth for how a product should be listed on eBay
+#
+# Example usage:
+# - Storing category selection before listing
+# - Saving condition and item specifics before listing
+# - Maintaining listing preferences for future/repeat listings
 class EbayProductAttribute < ApplicationRecord
     belongs_to :kuralis_product, optional: true
     belongs_to :category, class_name: "EbayCategory", primary_key: "category_id", foreign_key: "category_id", optional: true

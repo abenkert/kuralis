@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_03_21_132055) do
+ActiveRecord::Schema[8.0].define(version: 2025_03_22_224351) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -97,6 +97,10 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_21_132055) do
     t.string "ebay_status"
     t.datetime "last_sync_at"
     t.string "store_category_id"
+    t.string "payment_profile_id"
+    t.string "return_profile_id"
+    t.index ["payment_profile_id"], name: "index_ebay_listings_on_payment_profile_id"
+    t.index ["return_profile_id"], name: "index_ebay_listings_on_return_profile_id"
     t.index ["shopify_ebay_account_id"], name: "index_ebay_listings_on_shopify_ebay_account_id"
     t.index ["store_category_id"], name: "index_ebay_listings_on_store_category_id"
   end
