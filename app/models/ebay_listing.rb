@@ -55,6 +55,45 @@ class EbayListing < ApplicationRecord
     last_sync_at.nil? || last_sync_at < updated_at
   end
 
+  def self.create_from_product(product, ebay_item_id)
+    return nil unless product.ebay_product_attribute
+
+    # Get the configuration from ebay_product_attribute
+    config = product.ebay_product_attribute
+
+    # Create new listing with transferred data
+    listing = new(
+      shopify_ebay_account: product.shop.shopify_ebay_account,
+      ebay_item_id: ebay_item_id,
+      title: product.title,
+      description: product.description,
+      sale_price: product.base_price,
+      quantity: product.base_quantity,
+      listing_format: "FixedPriceItem",
+      category_id: config.category_id || 0,
+      condition_id: config.condition_id || 0,
+      condition_description: config.condition_description || "",
+      store_category_id: config.store_category_id || 0,
+      listing_duration: config.listing_duration || "GTC",
+      best_offer_enabled: config.best_offer_enabled || true,
+      shipping_profile_id: config.shipping_profile_id,
+      payment_profile_id: config.payment_profile_id,
+      return_profile_id: config.return_profile_id,
+      item_specifics: config.item_specifics || {},
+      location: product.location,
+      image_urls: product.image_urls,
+      ebay_status: "active",
+      end_time: 1.month.from_now, # This needs to be calculated if not set GTC
+    )
+
+    # Associate the listing with the product if saved successfully
+    if listing.save
+      product.update(ebay_listing: listing)
+    end
+
+    listing
+  end
+
   def cache_images
     return if images.attached?
 

@@ -56,27 +56,13 @@ module Ebay
         ebay_item_id = doc.at_xpath("//ebay:ItemID", namespace)&.text
 
         # Create eBay listing record and associate with product
-        ebay_listing = @shop.shopify_ebay_account.ebay_listings.create!(
-          ebay_item_id: ebay_item_id,
-          title: @product.title,
-          description: @product.description,
-          sale_price: @product.base_price,
-          original_price: @product.base_price,
-          quantity: @product.base_quantity,
-          location: @product.location,
-          shipping_profile_id: @ebay_attributes.shipping_profile_id,
-          payment_profile_id: @ebay_attributes.payment_profile_id,
-          return_profile_id: @ebay_attributes.return_profile_id,
-          ebay_status: "active",
-        )
+        ebay_listing = EbayListing.create_from_product(@product, ebay_item_id)
 
-        # Update the Kuralis product with the eBay listing
-        @product.update!(
-          ebay_listing: ebay_listing,
-          last_synced_at: Time.current
-        )
-
-        true
+        if ebay_listing.persisted?
+          true
+        else
+          false
+        end
       else
         false
       end

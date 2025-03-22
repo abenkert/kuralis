@@ -15,12 +15,12 @@ class ShopifyEbayAccount < ApplicationRecord
   end
 
   def shipping_profile_name(profile_id)
-    shipping_profiles.find { |profile| profile['id'] == profile_id }&.dig('name')
+    shipping_profiles.find { |profile| profile["id"] == profile_id }&.dig("name")
   end
 
   # Helper methods for store categories
   def store_category_name(category_id)
-    store_categories.find { |category| category['id'] == category_id }&.dig('name')
+    store_categories.find { |category| category["id"] == category_id }&.dig("name")
   end
 
   def update_store_categories(categories)
