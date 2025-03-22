@@ -45,11 +45,12 @@ Rails.application.routes.draw do
       end
     end
 
+    resources :bulk_listings, only: [ :index, :create ]
+    resources :listings, only: [ :create ]
+
     resources :products, only: [ :index, :new, :create, :edit, :update, :destroy ] do
       collection do
         post :bulk_action
-        get :bulk_listing
-        post :process_bulk_listing
         get :bulk_ai_creation
         post :upload_images
         delete :remove_image

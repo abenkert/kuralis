@@ -5,7 +5,7 @@ module Ebay
     def perform(shop_id:, kuralis_product_id:)
       product = KuralisProduct.find(kuralis_product_id)
 
-      service = EbayListingService.new(product)
+      service = Ebay::ListingService.new(product)
       success = service.create_listing
 
       if success

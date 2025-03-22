@@ -32,12 +32,12 @@
         </li>
         <li><hr class="dropdown-divider"></li>
         <li>
-          <%= link_to bulk_listing_kuralis_products_path(platform: 'shopify'), class: "dropdown-item" do %>
+          <%= link_to kuralis_bulk_listings_path(platform: 'shopify'), class: "dropdown-item" do %>
             <i class="bi bi-shop me-2"></i>Bulk List to Shopify
       <% end %>
         </li>
         <li>
-          <%= link_to bulk_listing_kuralis_products_path(platform: 'ebay'), class: "dropdown-item" do %>
+          <%= link_to kuralis_bulk_listings_path(platform: 'ebay'), class: "dropdown-item" do %>
             <i class="bi bi-tags me-2"></i>Bulk List to eBay
       <% end %>
         </li>
@@ -196,7 +196,7 @@
                         <% else %>
                           <% unless product.shopify_product %>
                             <li>
-                                <%= link_to process_bulk_listing_kuralis_products_path(product_ids: [product.id], platform: 'shopify'),
+                                <%= link_to kuralis_bulk_listings_path(product_ids: [product.id], platform: 'shopify'),
                                   method: :post,
                                   class: "dropdown-item",
                                   data: { turbo_method: :post, turbo_confirm: 'List this product on Shopify?' } do %>
@@ -206,7 +206,7 @@
                           <% end %>
                           <% unless product.ebay_listing %>
                             <li>
-                              <%= link_to process_bulk_listing_kuralis_products_path(product_ids: [product.id], platform: 'ebay'),
+                              <%= link_to kuralis_bulk_listings_path(product_ids: [product.id], platform: 'ebay'),
                                   method: :post,
                                   class: "dropdown-item",
                                   data: { turbo_method: :post, turbo_confirm: 'List this product on eBay?' } do %>
