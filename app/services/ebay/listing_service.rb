@@ -25,19 +25,30 @@ module Ebay
         return false
       end
 
-      p verify_result
+      if verify_result[:warning]
+        Rails.logger.info "Proceeding with listing creation despite warning: #{verify_result[:warning]}"
+      end
+
       # If verification passed, create the actual listing
-      # create_fixed_price_item
+      create_fixed_price_item
     end
 
     private
 
     def verify_listing
-      make_api_call("VerifyAddFixedPriceItem", build_item_request)
+      @api_call_name = "VerifyAddFixedPriceItem"
+      result = make_api_call(@api_call_name, build_item_request)
+
+      if result[:warning]
+        Rails.logger.info "Listing verification warning: #{result[:warning]}"
+      end
+
+      result
     end
 
     def create_fixed_price_item
-      result = make_api_call("AddFixedPriceItem", build_item_request)
+      @api_call_name = "AddFixedPriceItem"
+      result = make_api_call(@api_call_name, build_item_request)
 
       if result[:success]
         doc = result[:response]
@@ -45,14 +56,18 @@ module Ebay
         ebay_item_id = doc.at_xpath("//ebay:ItemID", namespace)&.text
 
         # Create eBay listing record and associate with product
-        ebay_listing = @shop.ebay_listings.create!(
+        ebay_listing = @shop.shopify_ebay_account.ebay_listings.create!(
           ebay_item_id: ebay_item_id,
           title: @product.title,
           description: @product.description,
           sale_price: @product.base_price,
+          original_price: @product.base_price,
           quantity: @product.base_quantity,
+          location: @product.location,
+          shipping_profile_id: @ebay_attributes.shipping_profile_id,
+          payment_profile_id: @ebay_attributes.payment_profile_id,
+          return_profile_id: @ebay_attributes.return_profile_id,
           ebay_status: "active",
-          metadata: doc.to_s
         )
 
         # Update the Kuralis product with the eBay listing
@@ -88,13 +103,23 @@ module Ebay
           request.body = request_body
           http.request(request)
         end
+        Rails.logger.debug "eBay API Response: #{response.body}"
 
         if response.is_a?(Net::HTTPSuccess)
           doc = Nokogiri::XML(response.body)
+          Rails.logger.debug "eBay API Response: #{doc.to_xml}"
           namespace = { "ebay" => "urn:ebay:apis:eBLBaseComponents" }
 
-          if doc.at_xpath("//ebay:Ack", namespace)&.text == "Success"
-            { success: true, response: doc }
+          ack = doc.at_xpath("//ebay:Ack", namespace)&.text
+          if ack == "Success" || ack == "Warning"
+            severity = doc.at_xpath("//ebay:Errors/ebay:SeverityCode", namespace)&.text
+            message = doc.at_xpath("//ebay:Errors/ebay:ShortMessage", namespace)&.text
+
+            if severity == "Warning"
+              Rails.logger.info "eBay API Warning (#{call_name}): #{message}"
+            end
+
+            { success: true, response: doc, warning: severity == "Warning" ? message : nil }
           else
             error_message = doc.at_xpath("//ebay:Errors/ebay:ShortMessage", namespace)&.text || "Unknown error"
             Rails.logger.error "eBay API Error (#{call_name}): #{error_message}"
@@ -136,15 +161,17 @@ module Ebay
             <Quantity>#{@product.base_quantity}</Quantity>
             #{build_item_specifics_xml}
             #{build_picture_details_xml}
-            <PaymentPolicy>
-              <PaymentPolicyID>#{@ebay_attributes.payment_policy_id}</PaymentPolicyID>
-            </PaymentPolicy>
-            <ReturnPolicy>
-              <ReturnPolicyID>#{@ebay_attributes.return_policy_id}</ReturnPolicyID>
-            </ReturnPolicy>
-            <ShippingDetails>
-              <ShippingProfileID>#{@ebay_attributes.shipping_profile_id}</ShippingProfileID>
-            </ShippingDetails>
+            <SellerProfiles>
+              <SellerPaymentProfile>
+                <PaymentProfileID>#{@ebay_attributes.payment_profile_id}</PaymentProfileID>
+              </SellerPaymentProfile>
+              <SellerReturnProfile>
+                <ReturnProfileID>#{@ebay_attributes.return_profile_id}</ReturnProfileID>
+              </SellerReturnProfile>
+              <SellerShippingProfile>
+                <ShippingProfileID>#{@ebay_attributes.shipping_profile_id}</ShippingProfileID>
+              </SellerShippingProfile>
+            </SellerProfiles>
           </Item>
         </#{@api_call_name}Request>
       XML

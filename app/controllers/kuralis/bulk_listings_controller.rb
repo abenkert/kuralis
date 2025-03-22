@@ -27,7 +27,7 @@ module Kuralis
 
       # Ensure at least one platform is selected
       if platforms.empty?
-        redirect_to bulk_listing_kuralis_products_path, alert: "Please select at least one platform for listing."
+        redirect_to kuralis_bulk_listings_path, alert: "Please select at least one platform for listing."
         return
       end
 
