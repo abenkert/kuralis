@@ -5,8 +5,18 @@ class KuralisProduct < ApplicationRecord
   belongs_to :ai_product_analysis, optional: true
   belongs_to :warehouse, optional: true
   before_save :ensure_warehouse
-  has_many_attached :images
   has_one :ebay_product_attribute, dependent: :destroy
+  has_many :inventory_transactions
+  has_many :order_items
+  has_many_attached :images
+
+  # Image processing configuration for web display
+  has_one_attached :thumbnail do |attachable|
+    attachable.variant :thumb, resize_to_limit: [ 100, 100 ], format: :webp, quality: 80
+    attachable.variant :medium, resize_to_limit: [ 400, 400 ], format: :webp, quality: 80
+    attachable.variant :large, resize_to_limit: [ 800, 800 ], format: :webp, quality: 80
+  end
+
   accepts_nested_attributes_for :ebay_product_attribute, reject_if: :all_blank
 
   validates :title, presence: true
@@ -22,6 +32,7 @@ class KuralisProduct < ApplicationRecord
   scope :from_shopify, -> { where(source_platform: "shopify") }
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
   after_update :schedule_platform_updates, if: :saved_change_to_base_quantity?
+  after_save :process_images, if: -> { saved_change_to_images_attachments? }
 
   # Handle tags input
   def tags=(value)
@@ -168,6 +179,34 @@ class KuralisProduct < ApplicationRecord
     update(images_last_synced_at: Time.current)
   end
 
+  # Returns a processed image variant that meets eBay's requirements
+  def prepare_image_for_ebay(image)
+    image.variant(
+      resize_to_limit: [ 1600, 1600 ],    # Larger size for eBay
+      format: :jpg,                     # JPEG format for compatibility
+      saver: {
+        strip: true,                    # Remove metadata
+        quality: 90                     # Higher quality for eBay requirement
+      }
+    ).processed
+  end
+
+  def ebay_compatible_image_urls
+    return [] unless images&.attached?
+
+    images.map do |image|
+      if image.blob.metadata["ebay_version_key"]
+        # Get the eBay-optimized version
+        ebay_blob = ActiveStorage::Blob.find_by(key: image.blob.metadata["ebay_version_key"])
+        Rails.application.routes.url_helpers.rails_blob_url(ebay_blob) if ebay_blob
+      else
+        # If no eBay version exists, create one on the fly
+        variant = prepare_image_for_ebay(image)
+        Rails.application.routes.url_helpers.url_for(variant)
+      end
+    end.compact
+  end
+
   private
 
   def schedule_platform_updates
@@ -188,5 +227,54 @@ class KuralisProduct < ApplicationRecord
 
   def ensure_warehouse
     self.warehouse ||= shop.warehouses.find_by(is_default: true)
+  end
+
+  def process_images
+    return unless images.attached?
+
+    images.each do |image|
+      # Create web-optimized version (for our interface)
+      web_version = image.variant(
+        resize_to_limit: [ 1200, 1200 ],
+        format: :webp,
+        quality: 80,
+        saver: { strip: true }
+      ).processed
+
+      # Only update if the processed version is smaller
+      if web_version.image.blob.byte_size < image.blob.byte_size
+        # Store original image data for potential eBay use
+        original_blob = image.blob.dup
+
+        # Update the blob with web-optimized version
+        image.blob.update!(
+          io: File.open(web_version.image.path),
+          filename: "#{image.blob.filename.base}.webp",
+          content_type: "image/webp"
+        )
+
+        # Create and attach eBay-compatible version if needed
+        if eligible_for_ebay? || listed_on_ebay?
+          ebay_version = original_blob.variant(
+            resize_to_limit: [ 1600, 1600 ],
+            format: :jpg,
+            quality: 90,
+            saver: { strip: true }
+          ).processed
+
+          # Store the eBay version with a different key
+          key = "ebay_#{SecureRandom.uuid}"
+          blob = ActiveStorage::Blob.create_and_upload!(
+            io: File.open(ebay_version.image.path),
+            filename: "#{image.blob.filename.base}.jpg",
+            content_type: "image/jpeg",
+            key: key
+          )
+
+          # Store the reference to the eBay-compatible image
+          image.blob.update(metadata: image.blob.metadata.merge(ebay_version_key: key))
+        end
+      end
+    end
   end
 end

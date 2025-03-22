@@ -538,6 +538,7 @@ DEPENDENCIES
   redis
   rubocop-rails-omakase
   ruby-openai (~> 7.4)
+  ruby-vips (~> 2.1)
   sassc-rails
   savon
   selenium-webdriver

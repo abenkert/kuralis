@@ -119,8 +119,12 @@
                   </td>
                   <td>
                     <% if product.images.attached? %>
-                      <%= image_tag product.images.first, class: "img-thumbnail", 
-                          style: "max-width: 50px; max-height: 50px;" %>
+                      <%= image_tag product.images.first.variant(
+                        resize_to_limit: [50, 50],
+                        format: :webp,
+                        quality: 80,
+                        saver: { strip: true }
+                      ), class: "img-thumbnail" %>
                     <% else %>
                       <%= image_tag "placeholder.png",
                           class: "img-thumbnail",

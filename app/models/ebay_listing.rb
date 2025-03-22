@@ -114,35 +114,29 @@ class EbayListing < ApplicationRecord
     end
   end
 
-  def test_image_upload
-    begin
-      # Test with a small image
-      test_url = "https://i.ebayimg.com/00/s/MTYwMFgxMjAw/z/IXMAAOSwKQRkOEOT/$_57.JPG"
-      temp_file = Down.download(test_url)
-
-      images.attach(
-        io: temp_file,
-        filename: "test_image.jpg",
-        content_type: temp_file.content_type
-      )
-
-      {
-        success: true,
-        url: images.last.url,
-        message: "Image uploaded successfully!"
-      }
-    rescue => e
-      {
-        success: false,
-        error: e.message
-      }
-    ensure
-      temp_file&.close
-      temp_file&.unlink
-    end
-  end
-
   def store_category_name
     shopify_ebay_account.store_category_name(store_category_id)
+  end
+
+  # Returns URLs of images in eBay-compatible format for listing creation/update
+  def ebay_compatible_image_urls
+    return [] unless kuralis_product&.images&.attached?
+
+    kuralis_product.images.map do |image|
+      if image.blob.metadata["ebay_version_key"]
+        # Get the eBay-optimized version
+        ebay_blob = ActiveStorage::Blob.find_by(key: image.blob.metadata["ebay_version_key"])
+        Rails.application.routes.url_helpers.rails_blob_url(ebay_blob) if ebay_blob
+      else
+        # If no eBay version exists, create one on the fly
+        variant = kuralis_product.prepare_image_for_ebay(image)
+        Rails.application.routes.url_helpers.url_for(variant)
+      end
+    end.compact
+  end
+
+  # Returns URLs of images as they appear on eBay
+  def ebay_hosted_image_urls
+    image_urls
   end
 end

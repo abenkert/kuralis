@@ -185,15 +185,16 @@ module Ebay
     def build_picture_details_xml
       return "" unless @product.images.attached?
 
-      image_upload_service = EbayImageUploadService.new(@shop)
+      image_upload_service = Ebay::ImageUploadService.new(@shop)
       uploaded_urls = []
 
-      @product.images.each do |image|
-        result = image_upload_service.upload_image(image)
+      # Get eBay-compatible image URLs
+      @product.ebay_compatible_image_urls.each do |image_url|
+        result = image_upload_service.upload_image(image_url)
         if result[:success]
           uploaded_urls << result[:url]
         else
-          Rails.logger.error "Failed to upload image #{image.filename}: #{result[:error]}"
+          Rails.logger.error "Failed to upload image to eBay: #{result[:error]}"
         end
       end
 
