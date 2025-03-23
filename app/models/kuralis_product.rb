@@ -32,7 +32,7 @@ class KuralisProduct < ApplicationRecord
   scope :from_shopify, -> { where(source_platform: "shopify") }
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
   after_update :schedule_platform_updates, if: :saved_change_to_base_quantity?
-  after_save :process_images, if: -> { saved_change_to_images_attachments? }
+  after_save :process_images, if: :images_changed?
 
   # Handle tags input
   def tags=(value)
@@ -229,10 +229,17 @@ class KuralisProduct < ApplicationRecord
     self.warehouse ||= shop.warehouses.find_by(is_default: true)
   end
 
+  def images_changed?
+    saved_changes.key?("id") || # new record
+    images.any? { |image| image.blob.created_at > 1.minute.ago } # recently attached images
+  end
+
   def process_images
     return unless images.attached?
 
     images.each do |image|
+      next if image.blob.metadata["processed"] # Skip if already processed
+
       # Create web-optimized version (for our interface)
       web_version = image.variant(
         resize_to_limit: [ 1200, 1200 ],
@@ -271,8 +278,13 @@ class KuralisProduct < ApplicationRecord
             key: key
           )
 
-          # Store the reference to the eBay-compatible image
-          image.blob.update(metadata: image.blob.metadata.merge(ebay_version_key: key))
+          # Store the reference to the eBay-compatible image and mark as processed
+          image.blob.update(
+            metadata: image.blob.metadata.merge(
+              ebay_version_key: key,
+              processed: true
+            )
+          )
         end
       end
     end
