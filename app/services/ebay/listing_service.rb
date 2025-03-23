@@ -33,7 +33,7 @@ module Ebay
       create_fixed_price_item
     end
 
-    private
+
 
     def verify_listing
       @api_call_name = "VerifyAddFixedPriceItem"
@@ -169,8 +169,9 @@ module Ebay
 
     def build_item_specifics_xml
       return "" unless @ebay_attributes.item_specifics.present?
-
       specifics_xml = @ebay_attributes.item_specifics.map do |name, value|
+        # Convert underscores to spaces and capitalize each word
+        name = name.gsub("_", " ").split.map(&:capitalize).join(" ")
         <<~XML
           <NameValueList>
             <Name>#{CGI.escapeHTML(name)}</Name>
