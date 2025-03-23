@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_03_22_224351) do
+ActiveRecord::Schema[8.0].define(version: 2025_03_23_015902) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -197,6 +197,20 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_22_224351) do
     t.index ["warehouse_id"], name: "index_kuralis_products_on_warehouse_id"
   end
 
+  create_table "kuralis_shop_settings", force: :cascade do |t|
+    t.bigint "shop_id", null: false
+    t.string "category", null: false
+    t.string "key", null: false
+    t.jsonb "value", default: {}, null: false
+    t.jsonb "metadata", default: {}
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["key"], name: "index_kuralis_shop_settings_on_key"
+    t.index ["shop_id", "category", "key"], name: "index_kuralis_shop_settings_on_shop_id_and_category_and_key", unique: true
+    t.index ["shop_id", "category"], name: "index_kuralis_shop_settings_on_shop_id_and_category"
+    t.index ["shop_id"], name: "index_kuralis_shop_settings_on_shop_id"
+  end
+
   create_table "notifications", force: :cascade do |t|
     t.bigint "shop_id", null: false
     t.string "title", null: false
@@ -373,6 +387,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_03_22_224351) do
   add_foreign_key "kuralis_products", "shopify_products", on_delete: :nullify
   add_foreign_key "kuralis_products", "shops"
   add_foreign_key "kuralis_products", "warehouses"
+  add_foreign_key "kuralis_shop_settings", "shops"
   add_foreign_key "notifications", "shops"
   add_foreign_key "order_items", "kuralis_products"
   add_foreign_key "order_items", "orders"

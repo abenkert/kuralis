@@ -58,6 +58,8 @@ Rails.application.routes.draw do
         get :create_product_from_ai
       end
     end
+
+    patch "settings", to: "settings#update"
   end
 
   namespace :ebay do

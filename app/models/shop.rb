@@ -13,6 +13,9 @@ class Shop < ApplicationRecord
   has_many :warehouses
   has_one :default_warehouse, -> { where(is_default: true) }, class_name: "Warehouse"
 
+  # Settings methods
+  has_many :kuralis_shop_settings, dependent: :destroy
+
   after_create :create_default_warehouse
 
   def api_version
@@ -56,6 +59,35 @@ class Shop < ApplicationRecord
       ebay: ebay_listings_count,
       unlinked: unlinked_products_count
     }
+  end
+
+  def get_setting(category, key)
+    KuralisShopSetting.get_setting(self, category, key)
+  end
+
+  def set_setting(category, key, value)
+    KuralisShopSetting.set_setting(self, category, key, value)
+  end
+
+  def get_category_settings(category)
+    KuralisShopSetting.get_category_settings(self, category)
+  end
+
+  # Setting-specific methods
+  def store_location_in_description?
+    get_setting("general", "store_location_in_description")
+  end
+
+  def store_location_in_specifics?
+    get_setting("general", "store_location_in_specifics")
+  end
+
+  def append_description?
+    get_setting("general", "append_description")
+  end
+
+  def default_description
+    get_setting("general", "default_description")
   end
 
   private
