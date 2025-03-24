@@ -66,7 +66,6 @@ Rails.application.routes.draw do
     get "auth", to: "auth#auth"
     get "callback", to: "auth#callback"
     delete "auth", to: "auth#destroy", as: :unlink
-    post "notifications", to: "notifications#create"
     resources :listings, only: [ :index ] do
       collection do
         resources :quick_sync, only: [ :create ]
@@ -80,6 +79,11 @@ Rails.application.routes.draw do
     patch "shipping_weights", to: "shipping_weights#update"
     post "store_categories", to: "store_categories#create"
     patch "category_tags", to: "category_tags#update"
+    resources :notifications, only: [ :create ] do
+      collection do
+        get :test
+      end
+    end
   end
 
   namespace :admin do
