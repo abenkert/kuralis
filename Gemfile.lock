@@ -390,6 +390,8 @@ GEM
       ffi (~> 1.12)
       logger
     rubyzip (2.3.2)
+    rufus-scheduler (3.9.2)
+      fugit (~> 1.1, >= 1.11.1)
     sassc (2.4.0)
       ffi (~> 1.9)
     sassc-rails (2.1.2)
@@ -438,6 +440,10 @@ GEM
       logger
       rack (>= 2.2.4)
       redis-client (>= 0.22.2)
+    sidekiq-scheduler (5.0.6)
+      rufus-scheduler (~> 3.2)
+      sidekiq (>= 6, < 8)
+      tilt (>= 1.4.0, < 3)
     solid_cable (3.0.2)
       actioncable (>= 7.2)
       activejob (>= 7.2)
@@ -544,6 +550,7 @@ DEPENDENCIES
   selenium-webdriver
   shopify_app
   sidekiq
+  sidekiq-scheduler
   solid_cable
   solid_cache
   solid_queue

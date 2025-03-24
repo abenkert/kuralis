@@ -1,5 +1,19 @@
-# :schedule:
-#   ebay_sync_orders:
-#     every: '2m'   # Runs every 2 minutes
-#     class: Ebay::SyncOrdersJob
-#     queue: default 
+:queues:
+  - default
+  - mailers
+  - active_storage_analysis
+  - active_storage_purge
+
+:scheduler:
+  :schedule:
+    sync_shopify_orders:
+      cron: '*/2 * * * *'   # Every 2 minutes
+      class: Shopify::SyncOrdersJob
+      queue: default
+      description: "Sync Shopify orders every 2 minutes"
+
+    sync_ebay_orders:
+      cron: '*/2 * * * *'   # Every 2 minutes
+      class: Ebay::SyncOrdersJob
+      queue: default
+      description: "Sync eBay orders every 2 minutes" 

@@ -1,36 +1,23 @@
 module Ebay
   class NotificationsController < ApplicationController
-    skip_before_action :verify_authenticity_token, only: :create
+    skip_before_action :verify_authenticity_token
 
     def create
-      # TODO: Pending eBay notification integration
-      # Current status: Endpoint configured but not receiving notifications from eBay
-      # Next steps: 
-      # 1. Verify eBay application notification settings
-      # 2. Confirm endpoint is publicly accessible
-      # 3. Add monitoring for incoming requests
-      return head :unauthorized unless valid_ebay_notification?
+      # Log the raw request for debugging
+      Rails.logger.info "eBay Notification Received"
+      Rails.logger.info "Headers: #{request.headers.to_h.select { |k, _| k.start_with?('HTTP_') }}"
+      Rails.logger.info "Body: #{request.raw_post}"
 
-      puts "Notification received"
+      # Parse the XML notification
+      notification = Hash.from_xml(request.raw_post)
+      Rails.logger.info "Parsed Notification: #{notification.inspect}"
 
-      notification_data = params.permit!.to_h
-    #   shop = Shop.find_by(shopify_domain: notification_data['Shop'])
-      pp notification_data
-      
-      case notification_data['NotificationEventName']
-      when 'AuctionCheckoutComplete'
-        # FetchEbayOrdersJob.perform_later(shop.id)
-        puts "AuctionCheckoutComplete notification received"
-      end
-      
+      # Acknowledge receipt
       head :ok
-    end
-
-    private
-
-    def valid_ebay_notification?
-      # Implement eBay notification verification
-      true
+    rescue => e
+      Rails.logger.error "Error processing eBay notification: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      head :internal_server_error
     end
   end
-end 
+end

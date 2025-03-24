@@ -12,8 +12,27 @@ module Shopify
     RECENT_WINDOW = 72.hours
     EXTENDED_WINDOW = 30.days
 
-    def perform(shop_id)
-      @shop = Shop.find(shop_id)
+    def perform(shop_id = nil)
+      if shop_id
+        sync_shop(Shop.find(shop_id))
+      else
+        Shop.find_each do |shop|
+          next unless shop.shopify_session # Skip shops without Shopify connection
+
+          begin
+            sync_shop(shop)
+          rescue => e
+            Rails.logger.error "Failed to sync Shopify orders for shop #{shop.id}: #{e.message}"
+            Rails.logger.error e.backtrace.join("\n")
+          end
+        end
+      end
+    end
+
+    private
+
+    def sync_shop(shop)
+      @shop = shop
       @client = ShopifyAPI::Clients::Graphql::Admin.new(session: @shop.shopify_session)
 
       # Always process recent orders
@@ -23,38 +42,36 @@ module Shopify
       process_older_unfulfilled_orders if should_check_older_orders?
     end
 
-    private
-
     def process_recent_orders
       start_time = RECENT_WINDOW.ago.iso8601
-      
+
       orders_response = fetch_orders(start_time)
       process_orders(orders_response)
-      
+
       Rails.logger.info "Processed recent orders for shop #{@shop.id}"
     end
 
     def fetch_orders(start_time)
       after_cursor = nil
       all_orders = []
-      
+
       loop do
         response = @client.query(
           query: orders_query,
-          variables: { 
-            first: 50, 
+          variables: {
+            first: 50,
             after: after_cursor,
             query: "created_at:>='#{start_time}'"
           }
         )
 
-        raise "Shopify API Error: #{response.body['errors']}" if response.body['errors']
+        raise "Shopify API Error: #{response.body['errors']}" if response.body["errors"]
 
         orders = response.body["data"]["orders"]["edges"]
         break if orders.empty?
-        
+
         all_orders += orders.map { |edge| edge["node"] }
-        
+
         page_info = response.body["data"]["orders"]["pageInfo"]
         break unless page_info["hasNextPage"]
         after_cursor = orders.last["cursor"]
@@ -69,7 +86,7 @@ module Shopify
       orders.each do |order_data|
         begin
           order = @shop.orders.find_or_initialize_by(
-            platform: 'shopify',
+            platform: "shopify",
             platform_order_id: extract_id_from_gid(order_data["id"])
           )
 
@@ -78,7 +95,6 @@ module Shopify
           Rails.logger.error "Failed to process order #{order_data['id']}: #{e.message}"
         end
       end
-
     end
 
     def update_order_status(order, order_data)
@@ -102,13 +118,13 @@ module Shopify
       line_items.each do |edge|
         item = edge["node"]
         order_item = order.order_items.find_or_initialize_by(
-          platform: 'shopify',
+          platform: "shopify",
           platform_item_id: extract_id_from_gid(item["id"])
         )
 
         variant_id = extract_id_from_gid(item["variant"]["id"])
         kuralis_product = ShopifyProduct.find_by(shopify_variant_id: variant_id)&.kuralis_product
-        
+
         if kuralis_product
           if order.cancelled?
             InventoryService.release_inventory(
@@ -152,7 +168,7 @@ module Shopify
       if customer
         "#{customer['firstName']} #{customer['lastName']}".strip
       else
-        'Unknown Customer'
+        "Unknown Customer"
       end
     end
 
@@ -208,7 +224,7 @@ module Shopify
 
     def extract_id_from_gid(gid)
       return nil if gid.blank?
-      gid.split('/').last
+      gid.split("/").last
     rescue => e
       Rails.logger.error "Failed to extract ID from GID: #{gid}"
       nil
@@ -225,9 +241,9 @@ module Shopify
 
     def process_older_unfulfilled_orders
       unfulfilled_orders = @shop.orders
-                               .where(platform: 'shopify')
-                               .where.not(status: ['completed', 'cancelled'])
-                               .where('created_at > ?', EXTENDED_WINDOW.ago)
+                               .where(platform: "shopify")
+                               .where.not(status: [ "completed", "cancelled" ])
+                               .where("created_at > ?", EXTENDED_WINDOW.ago)
 
       unfulfilled_orders.find_each do |order|
         update_single_order(order)
@@ -292,4 +308,4 @@ module Shopify
       GQL
     end
   end
-end 
+end

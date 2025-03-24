@@ -93,3 +93,5 @@ gem "ruby-openai", "~> 7.4"
 gem "pgvector", "~> 0.2.2"
 
 gem 'ruby-vips', '~> 2.1'  # Faster than mini_magick
+
+gem 'sidekiq-scheduler'
