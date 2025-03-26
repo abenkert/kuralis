@@ -65,24 +65,6 @@
               <li>Finalize draft products by editing and confirming details</li>
             </ol>
           </div>
-          
-          <hr class="my-4">
-          
-          <div class="mt-4">
-            <h6 class="font-weight-bold">Alternative Upload Method:</h6>
-            <p class="small text-muted">If you're having trouble with the drag and drop uploader, try this simple form:</p>
-            
-            <form action="<%= upload_images_kuralis_products_path %>" method="post" enctype="multipart/form-data">
-              <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
-              <div class="mb-3">
-                <label for="simple-file-input" class="form-label">Select image files</label>
-                <input type="file" name="images[]" id="simple-file-input" multiple accept="image/*" class="form-control">
-              </div>
-              <div class="d-grid">
-                <button type="submit" class="btn btn-primary">Upload Images</button>
-              </div>
-            </form>
-          </div>
         </div>
       </div>
     </div>
