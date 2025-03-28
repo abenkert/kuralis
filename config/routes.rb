@@ -48,16 +48,7 @@ Rails.application.routes.draw do
     resources :bulk_listings, only: [ :index, :create ]
     resources :listings, only: [ :create ]
 
-    resources :products, only: [ :index, :new, :create, :edit, :update, :destroy ] do
-      collection do
-        # post :bulk_action
-        # get :bulk_ai_creation
-        # post :upload_images
-        # delete :remove_image
-        # get :ai_analysis_status
-        # get :create_product_from_ai
-      end
-    end
+    resources :products, only: [ :index, :new, :create, :edit, :update, :destroy ]
     resources :ai_product_analyses, only: [ :index, :show, :create, :destroy ]
     resources :draft_products, only: [ :create ]
 
