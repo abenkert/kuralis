@@ -49,13 +49,14 @@
         </div>
         <div class="d-flex">
           <% if analysis.completed? %>
-            <%= link_to create_product_from_ai_kuralis_products_path(analysis_id: analysis.id), 
+            <%= link_to kuralis_ai_product_analyses_path(analysis_id: analysis.id), 
+                method: :post,
                 class: "btn btn-sm btn-primary", 
                 data: { turbo_method: :get } do %>
               <i class="fas fa-plus me-1"></i> Create Draft
             <% end %>
           <% end %>
-          <%= link_to remove_image_kuralis_products_path(analysis_id: analysis.id), 
+          <%= link_to remove_image_kuralis_ai_product_analyses_path(analysis_id: analysis.id), 
               method: :delete, 
               class: "btn btn-sm btn-outline-danger ms-2", 
               data: { turbo_method: :delete, turbo_confirm: "Are you sure you want to remove this image?" } do %>

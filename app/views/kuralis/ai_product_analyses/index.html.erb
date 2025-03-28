@@ -18,7 +18,7 @@
         </div>
         <div class="card-body">
           <!-- Hidden form that will be submitted -->
-          <form id="file-upload-form" action="<%= upload_images_kuralis_products_path %>" method="post" enctype="multipart/form-data">
+          <form id="file-upload-form" action="<%= upload_images_kuralis_ai_product_analyses_path %>" method="post" enctype="multipart/form-data">
             <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
             
             <!-- Hidden file input that will hold the files -->
@@ -107,7 +107,7 @@
               <% if @pending_analyses.any? || @processing_analyses.any? %>
                 <div id="ai_analyses" class="row">
                   <% (@pending_analyses + @processing_analyses).each do |analysis| %>
-                    <%= render partial: "kuralis/products/ai_analysis_item", locals: { analysis: analysis } %>
+                    <%= render partial: "kuralis/ai_product_analyses/ai_analysis_item", locals: { analysis: analysis } %>
                   <% end %>
                 </div>
               <% else %>
@@ -151,7 +151,8 @@
                               <% end %>
                             </div>
                             <div class="btn-group">
-                              <%= link_to create_product_from_ai_kuralis_products_path(analysis_id: analysis.id), 
+                              <%= link_to kuralis_ai_product_analyses_path(analysis_id: analysis.id), 
+                                  method: :post,
                                   class: "btn btn-sm btn-primary", 
                                   data: { turbo_method: :get } do %>
                                 <i class="fas fa-plus me-1"></i> Create Draft
@@ -324,261 +325,3 @@
     font-size: 0.85em;
   }
 </style>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    // Dropzone file upload functionality
-    setupDropzone();
-    
-    // Setup real-time analysis updates
-    setupRealTimeUpdates();
-    
-    // Initial poll for existing analyses
-    pollAnalysisStatus();
-  });
-  
-  function setupDropzone() {
-    const form = document.getElementById('file-upload-form');
-    const dropzone = document.getElementById('dropzone');
-    const hiddenFileInput = document.getElementById('hidden-file-input');
-    const browseButton = document.getElementById('browse-button');
-    const fileCount = document.getElementById('file-count');
-    const filePreviewList = document.getElementById('file-preview-list');
-    const previewContainer = document.getElementById('preview-container');
-    const clearButton = document.getElementById('clear-button');
-    
-    // Helper function to prevent default drag behavior
-    function preventDefaults(e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    
-    // Helper function to highlight dropzone on drag
-    function highlight() {
-      dropzone.classList.add('dropzone-active');
-    }
-    
-    // Helper function to remove highlight on drop/leave
-    function unhighlight() {
-      dropzone.classList.remove('dropzone-active');
-    }
-    
-    // Helper function to format file size
-    function formatFileSize(bytes) {
-      if (bytes === 0) return '0 Bytes';
-      const k = 1024;
-      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-    
-    // Handle the actual drop
-    function handleDrop(e) {
-      const dt = e.dataTransfer;
-      const files = dt.files;
-      handleFiles(files);
-    }
-    
-    // Handle the selected files
-    function handleFiles(files) {
-      hiddenFileInput.files = files;
-      updateFilePreview(files);
-    }
-    
-    // Update the file preview
-    function updateFilePreview(files) {
-      if (files.length > 0) {
-        previewContainer.classList.remove('d-none');
-        fileCount.textContent = files.length;
-        filePreviewList.innerHTML = '';
-        
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const item = document.createElement('div');
-          item.className = 'file-preview-item';
-          item.innerHTML = `
-            <span class="file-icon"><i class="fas fa-file-image"></i></span>
-            <span class="file-name">${file.name}</span>
-            <span class="file-size">${formatFileSize(file.size)}</span>
-          `;
-          filePreviewList.appendChild(item);
-        }
-      } else {
-        previewContainer.classList.add('d-none');
-      }
-    }
-    
-    // Clear the selected files
-    function clearFiles() {
-      hiddenFileInput.value = '';
-      previewContainer.classList.add('d-none');
-      filePreviewList.innerHTML = '';
-    }
-    
-    // Set up event listeners
-    
-    // Prevent default drag behaviors
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-      dropzone.addEventListener(eventName, preventDefaults, false);
-      document.body.addEventListener(eventName, preventDefaults, false);
-    });
-    
-    // Highlight dropzone when dragging over it
-    ['dragenter', 'dragover'].forEach(eventName => {
-      dropzone.addEventListener(eventName, highlight, false);
-    });
-    
-    // Remove highlight when dragging leaves or after drop
-    ['dragleave', 'drop'].forEach(eventName => {
-      dropzone.addEventListener(eventName, unhighlight, false);
-    });
-    
-    // Handle actual drop
-    dropzone.addEventListener('drop', handleDrop, false);
-    
-    // Open file dialog when clicking on dropzone
-    dropzone.addEventListener('click', function() {
-      hiddenFileInput.click();
-    });
-    
-    // Same for the browse button
-    browseButton.addEventListener('click', function(e) {
-      e.stopPropagation(); // Prevent the dropzone click event
-      hiddenFileInput.click();
-    });
-    
-    // Handle file selection
-    hiddenFileInput.addEventListener('change', function() {
-      handleFiles(this.files);
-    });
-    
-    // Clear button
-    clearButton.addEventListener('click', clearFiles);
-    
-    // Handle form submission
-    form.addEventListener('submit', function(e) {
-      if (hiddenFileInput.files.length === 0) {
-        e.preventDefault();
-        alert('Please select at least one image to upload.');
-      } else {
-        // Show a loading state or message
-        const uploadButton = this.querySelector('button[type="submit"]');
-        if (uploadButton) {
-          uploadButton.disabled = true;
-          uploadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
-        }
-      }
-    });
-  }
-  
-  function setupRealTimeUpdates() {
-    // Connect to ActionCable if available
-    if (typeof App !== 'undefined' && App.cable) {
-      console.log('Connecting to AI Analysis channel');
-      
-      App.aiAnalysis = App.cable.subscriptions.create("AiAnalysisChannel", {
-        connected: function() {
-          console.log("Connected to AI Analysis channel");
-        },
-        disconnected: function() {
-          console.log("Disconnected from AI Analysis channel");
-        },
-        received: function(data) {
-          console.log("Received update:", data);
-          updateAnalysisStatus(data);
-        }
-      });
-    } else {
-      console.log('ActionCable not available, falling back to polling');
-    }
-  }
-  
-  function updateAnalysisStatus(data) {
-    const element = document.querySelector(`[data-analysis-id="${data.analysis_id}"]`);
-    if (!element) return;
-    
-    const statusElement = element.querySelector('.analysis-status');
-    if (statusElement) {
-      statusElement.textContent = data.status;
-      statusElement.className = `analysis-status status-${data.status}`;
-    }
-    
-    // If completed, enable the create button and update content
-    if (data.completed) {
-      const createButton = element.querySelector('.create-product-btn');
-      if (createButton) {
-        createButton.classList.remove('disabled');
-        createButton.removeAttribute('disabled');
-      }
-      
-      // Update the title and description if available
-      if (data.results) {
-        const titleElement = element.querySelector('h6.font-weight-bold');
-        if (titleElement && data.results.title) {
-          titleElement.textContent = data.results.title;
-        }
-        
-        const descriptionContainer = element.querySelector('.small.text-muted.mb-3');
-        if (descriptionContainer && data.results.description) {
-          descriptionContainer.innerHTML = `
-            <p class="mb-1">${truncateString(data.results.description, 100)}</p>
-            ${data.results.price ? `<p class="mb-0">Price: $${data.results.price}</p>` : ''}
-          `;
-        }
-      }
-    } else if (data.status === 'failed') {
-      // Show error message
-      const contentContainer = element.querySelector('.p-3');
-      if (contentContainer) {
-        const errorElement = contentContainer.querySelector('.small.text-danger.mb-3') || document.createElement('p');
-        errorElement.className = 'small text-danger mb-3';
-        errorElement.textContent = data.error || 'Analysis failed. Please try again.';
-        
-        // Find where to insert the error message
-        const titleElement = contentContainer.querySelector('h6.font-weight-bold');
-        if (titleElement && titleElement.nextElementSibling) {
-          titleElement.nextElementSibling.replaceWith(errorElement);
-        } else if (titleElement) {
-          titleElement.after(errorElement);
-        }
-      }
-    }
-  }
-  
-  // Make the function globally available for the ActionCable channel
-  window.updateAnalysisStatus = updateAnalysisStatus;
-  
-  // Helper function to truncate strings
-  function truncateString(str, maxLength) {
-    if (!str) return '';
-    if (str.length <= maxLength) return str;
-    return str.substr(0, maxLength) + '...';
-  }
-  
-  // Poll for status updates (as a fallback to real-time updates)
-  function pollAnalysisStatus() {
-    document.querySelectorAll('[data-analysis-id]').forEach(element => {
-      const analysisId = element.dataset.analysisId;
-      const statusElement = element.querySelector('.analysis-status');
-      
-      if (statusElement && statusElement.classList.contains('status-pending') || 
-          statusElement && statusElement.classList.contains('status-processing')) {
-        
-        fetch(`/kuralis/products/ai_analysis_status?analysis_id=${analysisId}`)
-          .then(response => response.json())
-          .then(data => {
-            updateAnalysisStatus({
-              analysis_id: analysisId,
-              status: data.status,
-              completed: data.completed,
-              results: data.completed ? data.results : null
-            });
-          })
-          .catch(error => console.error('Error polling analysis status:', error));
-      }
-    });
-    
-    // Poll every 10 seconds as a fallback
-    setTimeout(pollAnalysisStatus, 10000);
-  }
-</script>

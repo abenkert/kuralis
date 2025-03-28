@@ -127,14 +127,12 @@ module Kuralis
       @draft_products = current_shop.kuralis_products.draft&.limit(20)
     end
 
-    # GET /kuralis/products/ai_analysis_status
     def ai_analysis_status
       analysis = current_shop.ai_product_analyses.find(params[:analysis_id])
 
       render json: analysis.as_json_with_details
     end
 
-    # GET /kuralis/products/create_product_from_ai
     def create_product_from_ai
       analysis = current_shop.ai_product_analyses.find(params[:analysis_id])
 
@@ -182,7 +180,6 @@ module Kuralis
       end
     end
 
-    # POST /kuralis/products/upload_images
     def upload_images
       Rails.logger.debug "Upload images params: #{params.inspect}"
 
@@ -281,7 +278,6 @@ module Kuralis
       end
     end
 
-    # DELETE /kuralis/products/remove_image
     def remove_image
       analysis = current_shop.ai_product_analyses.find(params[:analysis_id])
 
