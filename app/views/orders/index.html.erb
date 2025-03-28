@@ -101,7 +101,10 @@
                                         order.shipping_address&.dig('street2'),
                                         "#{order.shipping_address&.dig('city')}, #{order.shipping_address&.dig('state')} #{order.shipping_address&.dig('postal_code')}",
                                         order.shipping_address&.dig('country')
-                                      ].compact.join('\n') %>">
+                                      ].compact.join("\n") %>"
+                                      data-bs-toggle="tooltip"
+                                      data-bs-placement="top"
+                                      title="Copy to clipboard">
                                 <i class="bi bi-clipboard"></i> Copy
                               </button>
                           <% end %>
