@@ -43,5 +43,34 @@ module Kuralis
         end
       end
     end
+
+    def create_all
+      # Find all completed analyses that haven't been processed yet
+      completed_analyses = current_shop.ai_product_analyses.completed.unprocessed
+
+      created_count = 0
+      failed_count = 0
+
+      completed_analyses.each do |analysis|
+        # Skip if a draft already exists for this analysis
+        next if KuralisProduct.exists?(ai_product_analysis_id: analysis.id)
+
+        draft_product = KuralisProduct.create_from_ai_analysis(analysis, current_shop)
+
+        if draft_product.persisted?
+          created_count += 1
+        else
+          failed_count += 1
+        end
+      end
+
+      if created_count > 0
+        message = "Successfully created #{created_count} draft products."
+        message += " #{failed_count} failed to create." if failed_count > 0
+        redirect_to kuralis_ai_product_analyses_path(tab: "drafts"), notice: message
+      else
+        redirect_to kuralis_ai_product_analyses_path, alert: "No draft products were created."
+      end
+    end
   end
 end

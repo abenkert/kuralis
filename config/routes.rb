@@ -50,7 +50,11 @@ Rails.application.routes.draw do
 
     resources :products, only: [ :index, :new, :create, :edit, :update, :destroy ]
     resources :ai_product_analyses, only: [ :index, :show, :create, :destroy ]
-    resources :draft_products, only: [ :create ]
+    resources :draft_products, only: [ :create ] do
+      collection do
+        post :create_all
+      end
+    end
 
     patch "settings", to: "settings#update"
   end
