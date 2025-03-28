@@ -60,39 +60,50 @@ module Kuralis
     def upload_images
       Rails.logger.debug "Upload images params: #{params.inspect}"
 
-      if params[:images].blank?
-        Rails.logger.warn "No images found in params"
-        redirect_to kuralis_ai_product_analyses_path, alert: "Please select at least one image to upload."
-        return
-      end
-
-      if params[:images].respond_to?(:each)
-        Rails.logger.debug "Images is enumerable: #{params[:images].class}"
-      else
-        Rails.logger.debug "Images is not enumerable: #{params[:images].class}"
-      end
-
-      uploaded_files = []
-
-      if params[:images].is_a?(Array)
-        Rails.logger.debug "Images is an array with #{params[:images].length} items"
-        uploaded_files = params[:images]
-      elsif params[:images].is_a?(Hash) || params[:images].is_a?(ActionController::Parameters)
-        Rails.logger.debug "Images is a hash/params with #{params[:images].keys.length} keys"
-        uploaded_files = params[:images].values
-      elsif params[:images].is_a?(ActionDispatch::Http::UploadedFile)
-        Rails.logger.debug "Images is a single UploadedFile"
-        uploaded_files = [ params[:images] ]
-      else
-        Rails.logger.debug "Images is some other type, attempting to process"
+      # Extract debug info if available
+      if params[:debug_info].present?
         begin
-          uploaded_files = Array(params[:images])
+          debug_info = JSON.parse(params[:debug_info])
+          Rails.logger.debug "Debug info from client: #{debug_info.inspect}"
         rescue => e
-          Rails.logger.error "Failed to convert images to array: #{e.message}"
+          Rails.logger.error "Error parsing debug info: #{e.message}"
         end
       end
 
+      # Check both the regular and fallback inputs
+      uploaded_files = []
+
+      # First try the standard 'images' parameter
+      if params[:images].present?
+        Rails.logger.debug "Found images parameter with type: #{params[:images].class}"
+
+        if params[:images].is_a?(Array)
+          Rails.logger.debug "Images is an array with #{params[:images].length} items"
+          uploaded_files = params[:images]
+        elsif params[:images].is_a?(Hash) || params[:images].is_a?(ActionController::Parameters)
+          Rails.logger.debug "Images is a hash/params with #{params[:images].keys.length} keys"
+          uploaded_files = params[:images].values
+        elsif params[:images].is_a?(ActionDispatch::Http::UploadedFile)
+          Rails.logger.debug "Images is a single UploadedFile"
+          uploaded_files = [ params[:images] ]
+        else
+          Rails.logger.debug "Images is some other type (#{params[:images].class}), attempting to process"
+          begin
+            uploaded_files = Array(params[:images])
+          rescue => e
+            Rails.logger.error "Failed to convert images to array: #{e.message}"
+          end
+        end
+      else
+        Rails.logger.warn "No images found in params"
+      end
+
       Rails.logger.debug "Found #{uploaded_files.length} files to process"
+
+      if uploaded_files.empty?
+        redirect_to kuralis_ai_product_analyses_path, alert: "Please select at least one image to upload."
+        return
+      end
 
       successful_uploads = 0
       failed_uploads = 0
@@ -104,7 +115,7 @@ module Kuralis
             next
           end
 
-          Rails.logger.debug "Processing file #{index}: #{uploaded_file.original_filename}"
+          Rails.logger.debug "Processing file #{index}: #{uploaded_file.original_filename} (#{uploaded_file.content_type}, #{uploaded_file.size} bytes)"
 
           analysis = current_shop.ai_product_analyses.new(
             status: "pending",

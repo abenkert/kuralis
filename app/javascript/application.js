@@ -38,4 +38,31 @@ document.addEventListener("turbo:before-cache", () => {
       tooltip.dispose();
     }
   });
+
+  // Mark all file inputs as processed to prevent reopening dialogs
+  document.querySelectorAll('input[type="file"]').forEach(input => {
+    input.dataset.processed = 'true';
+  });
+});
+
+document.addEventListener('turbo:before-render', () => {
+  // Avoid disrupting file inputs that are currently being interacted with
+  document.querySelectorAll('input[type="file"]').forEach(input => {
+    if (document.activeElement === input) {
+      console.log('Active file input detected during navigation');
+      // We don't prevent the navigation, but mark it for special handling
+      window._activeFileInputNavigation = true;
+    }
+  });
+});
+
+document.addEventListener('turbo:render', () => {
+  if (window._activeFileInputNavigation) {
+    console.log('Navigation occurred during file input interaction');
+    window._activeFileInputNavigation = false;
+    // Give extra time for things to settle before reinitializing
+    setTimeout(() => {
+      // You might want to do something specific here
+    }, 500);
+  }
 });
