@@ -18,7 +18,7 @@
         </div>
         <div class="card-body">
           <!-- Hidden form that will be submitted -->
-          <form id="file-upload-form" action="<%= upload_images_kuralis_ai_product_analyses_path %>" method="post" enctype="multipart/form-data">
+          <form id="file-upload-form" action="<%= kuralis_ai_product_analyses_path %>" method="post" enctype="multipart/form-data">
             <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
             
             <!-- Hidden file input that will hold the files -->
@@ -158,10 +158,9 @@
                               <% end %>
                             </div>
                             <div class="btn-group">
-                              <%= link_to kuralis_ai_product_analyses_path(analysis_id: analysis.id), 
-                                  method: :post,
+                              <%= link_to kuralis_draft_products_path(analysis_id: analysis.id), 
                                   class: "btn btn-sm btn-primary", 
-                                  data: { turbo_method: :get } do %>
+                                  data: { turbo_method: :post } do %>
                                 <i class="fas fa-plus me-1"></i> Create Draft
                               <% end %>
                             </div>

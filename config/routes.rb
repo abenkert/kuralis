@@ -58,12 +58,8 @@ Rails.application.routes.draw do
         # get :create_product_from_ai
       end
     end
-    resources :ai_product_analyses, only: [ :index, :show, :create ] do
-      collection do
-        post :upload_images
-        delete :remove_image
-      end
-    end
+    resources :ai_product_analyses, only: [ :index, :show, :create, :destroy ]
+    resources :draft_products, only: [ :create ]
 
     patch "settings", to: "settings#update"
   end
