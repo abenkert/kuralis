@@ -80,7 +80,29 @@ module Kuralis
         @product.is_draft = false
 
         if @product.save
-          redirect_to kuralis_products_path, notice: "Draft product was successfully finalized."
+          # Check if this is part of a finalization sequence
+          if params[:sequence] == "true" && session[:draft_finalize_remaining].present?
+            # Decrement remaining count
+            session[:draft_finalize_remaining] -= 1
+
+            # If there are more drafts, go to the next one
+            if session[:draft_finalize_remaining] > 0
+              next_draft = current_shop.kuralis_products.draft.order(created_at: :asc).first
+              if next_draft
+                redirect_to edit_kuralis_product_path(next_draft, finalize: true, sequence: true),
+                             notice: "Product was successfully finalized. Moving to next draft product."
+                return
+              end
+            end
+
+            # All done or no more drafts found
+            total = session[:draft_finalize_total] || 0
+            session[:draft_finalize_total] = nil
+            session[:draft_finalize_remaining] = nil
+            redirect_to kuralis_products_path, notice: "Successfully finalized #{total} draft products!"
+          else
+            redirect_to kuralis_products_path, notice: "Draft product was successfully finalized."
+          end
         else
           render :edit, status: :unprocessable_entity
         end

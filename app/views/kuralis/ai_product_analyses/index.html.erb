@@ -189,6 +189,14 @@
             <!-- Draft Products Tab -->
             <div class="tab-pane fade" id="drafts" role="tabpanel" aria-labelledby="drafts-tab">
               <% if @draft_products.any? %>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h6 class="mb-0">Draft Products</h6>
+                  <%= link_to start_finalize_sequence_kuralis_draft_products_path, 
+                      class: "btn btn-warning btn-sm", 
+                      data: { turbo_method: :post } do %>
+                    <i class="fas fa-check-double me-1"></i> Finalize All Sequentially
+                  <% end %>
+                </div>
                 <div class="row">
                   <% @draft_products.each do |product| %>
                     <div class="col-md-6 mb-4" id="draft_product_<%= product.id %>">

@@ -72,5 +72,23 @@ module Kuralis
         redirect_to kuralis_ai_product_analyses_path, alert: "No draft products were created."
       end
     end
+
+    # Start a sequential finalization flow for draft products
+    def start_finalize_sequence
+      draft_count = current_shop.kuralis_products.draft.count
+
+      if draft_count == 0
+        redirect_to kuralis_ai_product_analyses_path, alert: "No draft products to finalize."
+        return
+      end
+
+      # Store total count in session for progress tracking
+      session[:draft_finalize_total] = draft_count
+      session[:draft_finalize_remaining] = draft_count
+
+      # Get the first draft product and redirect to edit
+      first_draft = current_shop.kuralis_products.draft.order(created_at: :asc).first
+      redirect_to edit_kuralis_product_path(first_draft, finalize: true, sequence: true)
+    end
   end
 end

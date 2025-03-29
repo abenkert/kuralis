@@ -4,6 +4,26 @@
       <% if @product.draft? && params[:finalize] == 'true' %>
         <h1 class="h3 mb-0 text-gray-800">Finalize Draft Product</h1>
         <p class="text-muted">Review and finalize this product before making it active</p>
+        
+        <% if params[:sequence] == 'true' && session[:draft_finalize_remaining].present? && session[:draft_finalize_total].present? %>
+          <div class="alert alert-info mt-3">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <i class="fas fa-tasks me-2"></i>
+                Finalizing product <%= session[:draft_finalize_total] - session[:draft_finalize_remaining] + 1 %> of <%= session[:draft_finalize_total] %>
+              </div>
+              <div>
+                <div class="progress" style="width: 200px; height: 10px;">
+                  <div class="progress-bar" role="progressbar" 
+                       style="width: <%= ((session[:draft_finalize_total] - session[:draft_finalize_remaining]) / session[:draft_finalize_total].to_f) * 100 %>%;" 
+                       aria-valuenow="<%= ((session[:draft_finalize_total] - session[:draft_finalize_remaining]) / session[:draft_finalize_total].to_f) * 100 %>" 
+                       aria-valuemin="0" 
+                       aria-valuemax="100"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% end %>
       <% else %>
         <h1 class="h3 mb-0 text-gray-800">Edit Product</h1>
         <p class="text-muted">Update product information in your Kuralis inventory</p>
@@ -25,6 +45,9 @@
       <%= form_with(model: @product, url: kuralis_product_path(@product), method: :patch, local: true, class: "needs-validation", multipart: true) do |form| %>
         <% if @product.draft? && params[:finalize] == 'true' %>
           <%= hidden_field_tag :finalize, 'true' %>
+          <% if params[:sequence] == 'true' %>
+            <%= hidden_field_tag :sequence, 'true' %>
+          <% end %>
         <% end %>
         
         <% if @product.errors.any? %>

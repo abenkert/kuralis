@@ -53,6 +53,7 @@ Rails.application.routes.draw do
     resources :draft_products, only: [ :create ] do
       collection do
         post :create_all
+        post :start_finalize_sequence
       end
     end
 
