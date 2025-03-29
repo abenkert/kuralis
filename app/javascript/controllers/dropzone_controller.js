@@ -8,11 +8,26 @@ export default class extends Controller {
   }
   
   connect() {
+    // Initialize variables
     this.selectedFiles = new Set()
+    
+    // Check if required targets exist
+    if (!this.hasInputTarget || !this.hasPreviewTarget || !this.hasTemplateTarget) {
+      console.warn("Dropzone controller: Missing required targets. Ensure data-dropzone-target attributes exist for 'input', 'preview', and 'template'.")
+      return
+    }
+    
+    // Setup drag and drop functionality
     this.setupDragAndDrop()
   }
   
   setupDragAndDrop() {
+    // First check if we have a valid element to add event listeners to
+    if (!this.element) {
+      console.warn("Dropzone controller: No element found to set up drag and drop")
+      return
+    }
+
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
       this.element.addEventListener(eventName, (e) => {
         e.preventDefault()
@@ -32,15 +47,18 @@ export default class extends Controller {
   browse(e) {
     e.preventDefault()
     e.stopPropagation()
+    if (!this.hasInputTarget) return
     this.inputTarget.click()
   }
 
   handleDrop(e) {
+    if (!this.hasInputTarget) return
     const files = Array.from(e.dataTransfer.files)
     this.addFiles(files)
   }
 
   handleFileSelect(e) {
+    if (!this.hasInputTarget) return
     const files = Array.from(e.target.files || [])
     if (files.length > 0) {
       this.addFiles(files)
@@ -81,6 +99,8 @@ export default class extends Controller {
   }
 
   createPreview(file) {
+    if (!this.hasPreviewTarget || !this.hasTemplateTarget) return
+    
     // Skip if preview already exists
     if (this.previewTarget.querySelector(`[data-preview-id="${file.name}"]`)) {
       return
@@ -155,9 +175,16 @@ export default class extends Controller {
   }
 
   updateFormInput() {
-    const dt = new DataTransfer()
-    this.selectedFiles.forEach(file => dt.items.add(file))
-    this.inputTarget.files = dt.files
+    if (!this.hasInputTarget) return
+    
+    try {
+      const dt = new DataTransfer()
+      this.selectedFiles.forEach(file => dt.items.add(file))
+      this.inputTarget.files = dt.files
+    } catch (error) {
+      console.error("Error updating file input:", error)
+      // This helps with older browsers or cases where DataTransfer isn't supported
+    }
   }
 
   formatSize(bytes) {
