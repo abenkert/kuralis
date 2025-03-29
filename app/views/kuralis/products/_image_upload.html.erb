@@ -6,11 +6,14 @@
       <%= form.file_field :images, multiple: true, class: "d-none", accept: "image/*", 
           data: { dropzone_target: "input", action: "change->dropzone#handleFileSelect" } %>
 
-      <%# Existing Images (if any) %>
-      <% if local_assigns[:existing_images] && existing_images.attached? %>
-        <div class="mb-4">
-          <h6 class="mb-3">Current Images</h6>
-          <div class="d-flex flex-wrap gap-3">
+      <%# All Images Section (both existing and new) %>
+      <div>
+        <h6 class="mb-3">Product Images</h6>
+        
+        <%# Images Preview Area %>
+        <div class="d-flex flex-wrap gap-3" id="imagePreviewContainer">
+          <%# Existing Images %>
+          <% if local_assigns[:existing_images] && existing_images.attached? %>
             <% existing_images.each do |image| %>
               <div class="image-preview-item" data-image-id="<%= image.id %>">
                 <div class="position-relative">
@@ -24,28 +27,92 @@
                 </div>
               </div>
             <% end %>
-          </div>
+          <% end %>
+
+          <%# Preview Area for Newly Added Images %>
+          <div data-dropzone-target="preview" class="d-contents"></div>
         </div>
-      <% end %>
 
-      <%# Dropzone Area %>
-      <div class="dropzone-area p-5 text-center border rounded bg-light"
-           data-action="dragenter->dropzone#dragEnter dragover->dropzone#dragOver dragleave->dropzone#dragLeave drop->dropzone#handleDrop">
-        <i class="fas fa-cloud-upload-alt fa-3x mb-3 text-muted"></i>
-        <p class="mb-1">Drag and drop images here</p>
-        <p class="text-muted small mb-3">or</p>
-        <button type="button" class="btn btn-outline-primary" data-action="click->dropzone#browse">
-          Browse Files
-        </button>
-        <p class="text-muted small mt-2">
-          Upload up to 10 images (max 5MB each)
-        </p>
+        <%# Dropzone Area %>
+        <div class="dropzone-area p-5 text-center border rounded bg-light mt-3"
+             data-action="dragenter->dropzone#dragEnter dragover->dropzone#dragOver dragleave->dropzone#dragLeave drop->dropzone#handleDrop">
+          <i class="fas fa-cloud-upload-alt fa-3x mb-3 text-muted"></i>
+          <p class="mb-1">Drag and drop images here</p>
+          <p class="text-muted small mb-3">or</p>
+          <button type="button" class="btn btn-outline-primary" data-action="click->dropzone#browse">
+            Browse Files
+          </button>
+          <p class="text-muted small mt-2">
+            Upload up to 10 images (max 5MB each)
+          </p>
+        </div>
       </div>
-
-      <%# Preview Area %>
-      <div class="mt-4 d-flex flex-wrap gap-3" data-dropzone-target="preview"></div>
     </div>
   </div>
+
+  <% if Rails.env.development? %>
+  <div class="small mt-2 text-muted debug-info">
+    <strong>Debug Info:</strong>
+    <div id="dropzone-debug"></div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        const debugContainer = document.querySelector('.debug-info');
+        const debugOutput = document.getElementById('dropzone-debug');
+        const fileInput = document.querySelector('input[name="kuralis_product[images][]"]');
+        
+        if (debugContainer && debugOutput && fileInput) {
+          // Create a debug button
+          const debugBtn = document.createElement('button');
+          debugBtn.className = 'btn btn-sm btn-outline-secondary mt-2';
+          debugBtn.textContent = 'Debug Image State';
+          debugBtn.type = 'button';
+          
+          debugBtn.addEventListener('click', function() {
+            // New files info
+            const files = fileInput.files;
+            let output = '<p><strong>New files to add:</strong> ' + (files ? files.length : 0) + '</p>';
+            
+            if (files && files.length > 0) {
+              output += '<ul>';
+              for (let i = 0; i < files.length; i++) {
+                output += '<li>' + files[i].name + ' (' + files[i].size + ' bytes)</li>';
+              }
+              output += '</ul>';
+            }
+            
+            // Existing images info
+            const existingImages = document.querySelectorAll('[data-image-id]');
+            output += '<p><strong>Existing images:</strong> ' + existingImages.length + '</p>';
+            
+            if (existingImages.length > 0) {
+              output += '<ul>';
+              existingImages.forEach(img => {
+                output += '<li>ID: ' + img.dataset.imageId + '</li>';
+              });
+              output += '</ul>';
+            }
+            
+            // Images marked for deletion
+            const deletionInputs = document.querySelectorAll('input[name="kuralis_product[images_to_delete][]"]');
+            output += '<p><strong>Images marked for deletion:</strong> ' + deletionInputs.length + '</p>';
+            
+            if (deletionInputs.length > 0) {
+              output += '<ul>';
+              deletionInputs.forEach(input => {
+                output += '<li>Delete ID: ' + input.value + '</li>';
+              });
+              output += '</ul>';
+            }
+            
+            debugOutput.innerHTML = output;
+          });
+          
+          debugContainer.appendChild(debugBtn);
+        }
+      });
+    </script>
+  </div>
+  <% end %>
 
   <%# Template for file previews %>
   <template data-dropzone-target="template">
@@ -93,6 +160,11 @@
 
 .btn-close:hover {
   opacity: 1;
+}
+
+/* Allow d-contents for proper flex layout */
+.d-contents {
+  display: contents;
 }
 
 /* Prevent text selection in dropzone */

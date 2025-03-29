@@ -148,7 +148,7 @@ export default class extends Controller {
     // Add a hidden field to mark this image for deletion
     const input = document.createElement('input')
     input.type = 'hidden'
-    input.name = 'product[images_to_delete][]'
+    input.name = 'kuralis_product[images_to_delete][]'
     input.value = imageId
     this.element.closest('form').appendChild(input)
     preview.remove()

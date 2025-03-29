@@ -66,7 +66,10 @@ module Kuralis
     def update
       @product = current_shop.kuralis_products.find(params[:id])
 
-      # Handle image deletion
+      # Prepare attributes for update
+      product_attrs = product_params.dup
+
+      # Handle image deletion first
       if params[:kuralis_product] && params[:kuralis_product][:images_to_delete].present?
         params[:kuralis_product][:images_to_delete].each do |image_id|
           image = @product.images.find_by(id: image_id)
@@ -74,9 +77,30 @@ module Kuralis
         end
       end
 
+      # Remove images_to_delete from attributes since it's not a real attribute
+      product_attrs.delete(:images_to_delete)
+
+      # Handle images separately - this is key to preserving existing images
+      new_images = product_attrs.delete(:images)
+
+      # Only attach new images if they exist (any non-blank files)
+      if new_images.present? && new_images.any?(&:present?)
+        Rails.logger.debug "Attaching #{new_images.count(&:present?)} new images to existing product"
+
+        # Only attach the non-blank images
+        new_images.each do |image|
+          @product.images.attach(image) if image.present?
+        end
+      end
+
+      # Handle tag conversion
+      if product_attrs[:tags].is_a?(String)
+        product_attrs[:tags] = product_attrs[:tags].split(",").map(&:strip)
+      end
+
       # If updating a draft, mark it as finalized
       if @product.draft? && params[:finalize] == "true"
-        @product.assign_attributes(product_params)
+        @product.assign_attributes(product_attrs)
         @product.is_draft = false
 
         if @product.save
@@ -107,7 +131,7 @@ module Kuralis
           render :edit, status: :unprocessable_entity
         end
       else
-        if @product.update(product_params)
+        if @product.update(product_attrs)
           redirect_to kuralis_products_path, notice: "Product was successfully updated."
         else
           render :edit, status: :unprocessable_entity
