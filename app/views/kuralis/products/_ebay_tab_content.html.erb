@@ -47,16 +47,11 @@
           <%= ebay_fields.label :condition_id, "eBay Condition", class: "form-label" %>
           <%= ebay_fields.select :condition_id, 
               [
-                ["New", "1000"],
-                ["New other (see details)", "1500"],
-                ["New with defects", "1750"],
-                ["Manufacturer refurbished", "2000"],
-                ["Seller refurbished", "2500"],
-                ["Used", "3000"],
+                ["Brand New", "1000"],
+                ["Like New", "2750"],
                 ["Very Good", "4000"],
                 ["Good", "5000"],
                 ["Acceptable", "6000"],
-                ["For parts or not working", "7000"]
               ], 
               { include_blank: "Select Condition" }, 
               { class: "form-select" } 

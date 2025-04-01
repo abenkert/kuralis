@@ -131,10 +131,13 @@ module Ebay
           </RequesterCredentials>
           <Item>
             <Title>#{CGI.escapeHTML(@product.title)}</Title>
-            <Description>#{format_description(@product.description)}</Description>
+            <Description>#{format_description(build_item_description)}</Description>
             <PrimaryCategory>
               <CategoryID>#{@ebay_attributes.category_id}</CategoryID>
             </PrimaryCategory>
+            <Storefront>
+              <StoreCategoryID>#{@ebay_attributes.store_category_id}</StoreCategoryID>
+            </Storefront>
             <StartPrice>#{@product.base_price}</StartPrice>
             <ConditionID>#{@ebay_attributes.condition_id}</ConditionID>
             <ConditionDescription>#{CGI.escapeHTML(@ebay_attributes.condition_description.to_s)}</ConditionDescription>
@@ -181,6 +184,19 @@ module Ebay
       end.join
 
       "<ItemSpecifics>#{specifics_xml}</ItemSpecifics>"
+    end
+
+    def build_item_description
+      description = @product.description
+      if KuralisShopSetting.get_setting(@shop, "store_location_in_description")
+        description = "#{@product.location}\n\n#{description}"
+      end
+
+      if KuralisShopSetting.get_setting(@shop, "append_description")
+        description += "\n\n#{KuralisShopSetting.get_setting(@shop, "default_description")}"
+      end
+
+      description
     end
 
     def build_picture_details_xml

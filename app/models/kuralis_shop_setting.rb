@@ -25,8 +25,8 @@ class KuralisShopSetting < ApplicationRecord
 
   # Class methods for easy access
   class << self
-    def get_setting(shop, category, key)
-      setting = find_by(shop: shop, category: category, key: key)
+    def get_setting(shop, key)
+      setting = find_by(shop: shop, key: key)
       return nil unless setting
 
       if BOOLEAN_SETTINGS.include?(key)

@@ -1,11 +1,14 @@
 module Kuralis
+  ############################################################
+  # This controller is used to list kuralis products on a platform
+  ############################################################
   class ListingsController < AuthenticatedController
     def create
-      @product = current_shop.kuralis_products.find(params[:id])
+      @product = current_shop.kuralis_products.find(params[:product_id])
       platforms = params[:platforms] || []
 
       if platforms.empty?
-        redirect_to kuralis_product_path(@product), alert: "Please select at least one platform for listing."
+        redirect_to kuralis_product_path(@product), alert: "Please select a platform for listing."
         return
       end
 

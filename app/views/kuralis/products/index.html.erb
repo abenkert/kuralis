@@ -199,7 +199,7 @@
                         <% else %>
                           <% unless product.shopify_product %>
                             <li>
-                                <%= link_to kuralis_bulk_listings_path(product_ids: [product.id], platform: 'shopify'),
+                                <%= link_to kuralis_listings_path(product_id: product.id, platforms: ['shopify']),
                                   method: :post,
                                   class: "dropdown-item",
                                   data: { turbo_method: :post, turbo_confirm: 'List this product on Shopify?' } do %>
@@ -209,7 +209,7 @@
                           <% end %>
                           <% unless product.ebay_listing %>
                             <li>
-                              <%= link_to kuralis_bulk_listings_path(product_ids: [product.id], platform: 'ebay'),
+                              <%= link_to kuralis_listings_path(product_id: product.id, platforms: ['ebay']),
                                   method: :post,
                                   class: "dropdown-item",
                                   data: { turbo_method: :post, turbo_confirm: 'List this product on eBay?' } do %>
