@@ -16,8 +16,6 @@
 # - Tracking listing status and performance
 # - Syncing inventory between platforms
 class EbayListing < ApplicationRecord
-  include TrackableUpdates
-
   belongs_to :shopify_ebay_account
   has_one :kuralis_product, dependent: :nullify
   has_many_attached :images
@@ -90,6 +88,17 @@ class EbayListing < ApplicationRecord
     # Associate the listing with the product if saved successfully
     if listing.save
       product.update(ebay_listing: listing)
+
+      # Attach product images to the ebay_listing
+      if product.images.attached?
+        product.images.each do |image|
+          listing.images.attach(
+            io: StringIO.new(image.download),
+            filename: image.filename.to_s,
+            content_type: image.content_type
+          )
+        end
+      end
     end
 
     listing

@@ -1,6 +1,4 @@
 class ShopifyProduct < ApplicationRecord
-  include TrackableUpdates
-
   belongs_to :shop
   has_one :kuralis_product, dependent: :nullify
   has_many_attached :images

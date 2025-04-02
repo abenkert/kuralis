@@ -6,7 +6,7 @@ module JobTrackable
       JobRun.create!(
         job_class: job.class.name,
         job_id: job.job_id,
-        status: 'queued',
+        status: "queued",
         arguments: job.arguments,
         shop_id: job.arguments.first.is_a?(Integer) ? job.arguments.first : nil
       )
@@ -15,7 +15,7 @@ module JobTrackable
     before_perform do |job|
       if job_run = JobRun.find_by(job_id: job.job_id)
         job_run.update!(
-          status: 'running',
+          status: "running",
           started_at: Time.current
         )
       end
@@ -24,7 +24,7 @@ module JobTrackable
     after_perform do |job|
       if job_run = JobRun.find_by(job_id: job.job_id)
         job_run.update!(
-          status: 'completed',
+          status: "completed",
           completed_at: Time.current
         )
       end
@@ -33,7 +33,7 @@ module JobTrackable
     rescue_from(StandardError) do |exception|
       if job_run = JobRun.find_by(job_id: job_id)
         job_run.update!(
-          status: 'failed',
+          status: "failed",
           error_message: "#{exception.class}: #{exception.message}",
           completed_at: Time.current
         )
@@ -41,4 +41,4 @@ module JobTrackable
       raise exception
     end
   end
-end 
+end
