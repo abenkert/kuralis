@@ -3,10 +3,15 @@ module Ebay
     queue_as :default
 
     def perform(ebay_listing, kuralis_product)
-      # Update the eBay listing with the current inventory
-      # Your eBay API update code here
+      # Use the InventoryService to handle the update/end logic
+      inventory_service = Ebay::InventoryService.new(ebay_listing, kuralis_product)
+      result = inventory_service.update_inventory
 
-      Rails.logger.info "Updated eBay listing #{ebay_listing.ebay_item_id} with quantity #{kuralis_product.quantity}"
+      if result
+        Rails.logger.info "Successfully processed eBay listing #{ebay_listing.ebay_item_id} update"
+      else
+        Rails.logger.error "Failed to process eBay listing #{ebay_listing.ebay_item_id} update"
+      end
     end
   end
 end

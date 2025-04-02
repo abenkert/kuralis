@@ -31,7 +31,7 @@ class KuralisProduct < ApplicationRecord
   scope :from_ebay, -> { where(source_platform: "ebay") }
   scope :from_shopify, -> { where(source_platform: "shopify") }
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
-  after_update :schedule_platform_updates, if: :saved_change_to_base_quantity?
+  after_update :schedule_platform_updates
 
   # Handle tags input
   def tags=(value)
@@ -223,19 +223,34 @@ class KuralisProduct < ApplicationRecord
   private
 
   def schedule_platform_updates
-    # Queue jobs to update associated platforms
+    # Only update platforms when relevant attributes have changed
+    return unless should_update_platforms?
+
     Rails.logger.info "Scheduling platform updates for #{id}"
-    # TODO: Add platform update jobs here
-    # TODO: This is where we will schedule the jobs to update the quantity on associated platforms
+
     if ebay_listing.present?
-      Ebay::UpdateListingJob.perform_later(ebay_listing, kuralis_product)
-      Rails.logger.info "Scheduled eBay update for listing #{ebay_listing.id} after inventory change"
+      Ebay::UpdateListingJob.perform_later(ebay_listing, self)
+      Rails.logger.info "Scheduled eBay update for listing #{ebay_listing.id} after product change"
     end
 
     if shopify_product.present?
-      Shopify::UpdateProductJob.perform_later(shopify_product, kuralis_product)
-      Rails.logger.info "Scheduled Shopify update for product #{shopify_product.id} after inventory change"
+      Shopify::UpdateProductJob.perform_later(shopify_product, self)
+      Rails.logger.info "Scheduled Shopify update for product #{shopify_product.id} after product change"
     end
+  end
+
+  def should_update_platforms?
+    # Attributes that should trigger platform updates when changed
+    relevant_attributes = [
+      :base_quantity,
+      :base_price,
+      :title,
+      :description,
+      :status
+    ]
+
+    # Check if any relevant attributes have changed
+    relevant_attributes.any? { |attr| saved_change_to_attribute?(attr.to_s) }
   end
 
   def ensure_warehouse

@@ -1,15 +1,17 @@
 module Shopify
   class UpdateProductJob < ApplicationJob
     queue_as :default
-    
-    def perform(shopify_product_id)
-      shopify_product = ShopifyProduct.find(shopify_product_id)
-      kuralis_product = shopify_product.kuralis_product
-      
-      # Update the Shopify product with the current inventory
-      # Your Shopify API update code here
-      
-      Rails.logger.info "Updated Shopify product #{shopify_product.shopify_id} with quantity #{kuralis_product.quantity}"
+
+    def perform(shopify_product, kuralis_product)
+      # Use the InventoryService to handle the update/end logic
+      inventory_service = Shopify::InventoryService.new(shopify_product, kuralis_product)
+      result = inventory_service.update_inventory
+
+      if result
+        Rails.logger.info "Successfully processed Shopify product #{shopify_product.shopify_id} update"
+      else
+        Rails.logger.error "Failed to process Shopify product #{shopify_product.shopify_id} update"
+      end
     end
   end
-end 
+end
