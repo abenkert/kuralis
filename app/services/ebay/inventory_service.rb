@@ -27,9 +27,9 @@ module Ebay
         @ebay_listing.update(
           title: @product.title,
           description: @product.description.to_s,
-          price: @product.base_price,
+          original_price: @product.base_price,
           quantity: @product.base_quantity,
-          status: "active"
+          ebay_status: "active"
         )
         true
       else

@@ -64,13 +64,13 @@ class ShopifyListingService
 
     pp product_response
 
-    if product_response && product_response.body['data'] && product_response.body['data']['productSet']['product']  
-        product_data = product_response.body['data']['productSet']['product']
-        variant_data = product_data['variants']['nodes'].first
+    if product_response && product_response.body["data"] && product_response.body["data"]["productSet"]["product"]
+        product_data = product_response.body["data"]["productSet"]["product"]
+        variant_data = product_data["variants"]["nodes"].first
 
-        product_id = product_data['id'].split('/').last
-        variant_id = variant_data['inventoryItem']['id'].split('/').last
-        
+        product_id = product_data["id"].split("/").last
+        variant_id = variant_data["inventoryItem"]["id"].split("/").last
+
         shopify_product = @product.create_shopify_product!(
             shop: @shop,
             shopify_product_id: product_id,
@@ -79,10 +79,10 @@ class ShopifyListingService
             price: @product.base_price,
             quantity: @product.base_quantity,
             sku: @product.sku,
-            status: 'active',
+            status: "active",
             published: true
           )
-    
+
           # Attach the same images from KuralisProduct
           if @product.images.attached?
             @product.images.each do |image|
@@ -130,7 +130,7 @@ class ShopifyListingService
               edges {
                 node {
                   preview {
-                    status    
+                    status#{'    '}
                     image {
                         id
                         url
@@ -169,6 +169,6 @@ class ShopifyListingService
 
   def escape_html(text)
     return "" unless text
-    text.gsub('"', '\"').gsub("\n", '\n').gsub("\r", '')
+    text.gsub('"', '\"').gsub("\n", '\n').gsub("\r", "")
   end
-end 
+end
