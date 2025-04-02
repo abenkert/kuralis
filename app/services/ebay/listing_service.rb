@@ -188,12 +188,12 @@ module Ebay
 
     def build_item_description
       description = @product.description
-      if KuralisShopSetting.get_setting(@shop, "store_location_in_description")
+      if @shop.store_location_in_description?
         description = "#{@product.location}\n\n#{description}"
       end
 
-      if KuralisShopSetting.get_setting(@shop, "append_description")
-        description += "\n\n#{KuralisShopSetting.get_setting(@shop, "default_description")}"
+      if @shop.append_description?
+        description += "\n\n#{@shop.default_description}"
       end
 
       description

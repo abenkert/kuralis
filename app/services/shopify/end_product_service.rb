@@ -56,6 +56,7 @@ module Shopify
 
       if result.body["data"] && result.body["data"]["productDelete"] && result.body["data"]["productDelete"]["deletedProductId"]
         Rails.logger.info "Successfully deleted Shopify product #{@shopify_product.shopify_product_id}"
+        # Remove the record from our database
         @shopify_product.destroy!
         true
       else

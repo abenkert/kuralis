@@ -3,7 +3,8 @@ module Ebay
     queue_as :ebay
 
     def perform(shop_id, ebay_listing_id, reason = "NotAvailable")
-      ebay_listing = EbayListing.find(ebay_listing_id)
+      shop = Shop.find(shop_id)
+      ebay_listing = shop.shopify_ebay_account.ebay_listings.find(ebay_listing_id)
 
       service = Ebay::EndListingService.new(ebay_listing)
       result = service.end_listing(reason)

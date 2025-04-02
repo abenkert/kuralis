@@ -228,15 +228,8 @@ class KuralisProduct < ApplicationRecord
 
     Rails.logger.info "Scheduling platform updates for #{id}"
 
-    if ebay_listing.present?
-      Ebay::UpdateListingJob.perform_later(shop.id, ebay_listing, self)
-      Rails.logger.info "Scheduled eBay update for listing #{ebay_listing.id} after product change"
-    end
-
-    if shopify_product.present?
-      Shopify::UpdateProductJob.perform_later(shop.id, shopify_product, self)
-      Rails.logger.info "Scheduled Shopify update for product #{shopify_product.id} after product change"
-    end
+    # Use the central platform sync service
+    PlatformSyncService.sync_product(self)
   end
 
   # TODO: We need to possibly look at changes to ebay_product_attribute and shopify_product_attributes

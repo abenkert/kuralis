@@ -24,7 +24,13 @@ module Ebay
 
       if result[:success]
         Rails.logger.info "Successfully updated eBay listing #{@ebay_listing.ebay_item_id}"
-        @ebay_listing.update(last_updated_at: Time.current)
+        @ebay_listing.update(
+          title: @product.title,
+          description: @product.description.to_s,
+          price: @product.base_price,
+          quantity: @product.base_quantity,
+          status: "active"
+        )
         true
       else
         Rails.logger.error "Failed to update eBay listing: #{result[:error]}"

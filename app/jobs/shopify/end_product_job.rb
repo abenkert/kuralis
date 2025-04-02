@@ -3,7 +3,8 @@ module Shopify
     queue_as :shopify
 
     def perform(shop_id, shopify_product_id)
-      shopify_product = ShopifyProduct.find(shopify_product_id)
+      shop = Shop.find(shop_id)
+      shopify_product = shop.shopify_products.find(shopify_product_id)
 
       service = Shopify::EndProductService.new(shopify_product)
       result = service.end_product

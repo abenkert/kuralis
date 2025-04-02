@@ -44,7 +44,13 @@ module Shopify
       )
 
       if result.body["data"] && result.body["data"]["productUpdate"] && result.body["data"]["productUpdate"]["product"]
-        @shopify_product.update(last_updated_at: Time.current)
+        @shopify_product.update(
+          title: @product.title,
+          description: @product.description.to_s,
+          price: @product.base_price,
+          quantity: @product.base_quantity,
+          status: "active"
+        )
         Rails.logger.info "Updated Shopify product #{@shopify_product.shopify_product_id} with latest information"
         true
       else

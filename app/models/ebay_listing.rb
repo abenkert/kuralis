@@ -16,6 +16,8 @@
 # - Tracking listing status and performance
 # - Syncing inventory between platforms
 class EbayListing < ApplicationRecord
+  include TrackableUpdates
+
   belongs_to :shopify_ebay_account
   has_one :kuralis_product, dependent: :nullify
   has_many_attached :images
@@ -27,7 +29,6 @@ class EbayListing < ApplicationRecord
   #   validates :original_price, numericality: { greater_than_or_equal_to: 0 },
   #             allow_nil: true
   #   validates :quantity, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
-
   # Scopes
   scope :active, -> { where(ebay_status: "active") }
   scope :completed, -> { where(ebay_status: "completed") }

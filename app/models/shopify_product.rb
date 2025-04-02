@@ -1,4 +1,6 @@
 class ShopifyProduct < ApplicationRecord
+  include TrackableUpdates
+
   belongs_to :shop
   has_one :kuralis_product, dependent: :nullify
   has_many_attached :images
@@ -11,13 +13,13 @@ class ShopifyProduct < ApplicationRecord
   validates :status, presence: true
 
   # Scopes
-  scope :active, -> { where(status: 'active') }
+  scope :active, -> { where(status: "active") }
   scope :published, -> { where(published: true) }
-  scope :needs_image_sync, -> { where('images_last_synced_at IS NULL OR images_last_synced_at < updated_at') }
+  scope :needs_image_sync, -> { where("images_last_synced_at IS NULL OR images_last_synced_at < updated_at") }
 
   # Helper methods
   def active?
-    status == 'active'
+    status == "active"
   end
 
   def has_inventory?
@@ -54,7 +56,7 @@ class ShopifyProduct < ApplicationRecord
         Rails.logger.error "Failed to cache image from #{url} for product #{shopify_product_id}: #{e.message}"
       end
     end
-    
+
     update(images_last_synced_at: Time.current)
   end
 
