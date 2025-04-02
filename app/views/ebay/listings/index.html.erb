@@ -146,6 +146,40 @@
                         target: "_blank",
                         class: "btn btn-sm btn-outline-primary" %>
                   </td>
+                  <td>
+                    <div class="dropdown">
+                      <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        Actions
+                      </button>
+                      <ul class="dropdown-menu dropdown-menu-end">
+                        <% if listing.active? %>
+                          <li>
+                            <%= button_to end_listing_ebay_listing_path(listing), 
+                                method: :post,
+                                class: "dropdown-item text-danger",
+                                data: { 
+                                  turbo: true,
+                                  turbo_confirm: "Are you sure you want to end this eBay listing? This action cannot be undone."
+                                } do %>
+                              <i class="bi bi-x-circle me-2"></i>End Listing
+                            <% end %>
+                          </li>
+                        <% end %>
+                        <% if listing.kuralis_product.blank? %>
+                          <li>
+                            <%= link_to "#", class: "dropdown-item" do %>
+                              <i class="bi bi-box me-2"></i>Create Product
+                            <% end %>
+                          </li>
+                        <% end %>
+                        <li>
+                          <%= link_to "#", class: "dropdown-item" do %>
+                            <i class="bi bi-arrow-repeat me-2"></i>Sync Details
+                          <% end %>
+                        </li>
+                      </ul>
+                    </div>
+                  </td>
                 </tr>
               <% end %>
             <% else %>

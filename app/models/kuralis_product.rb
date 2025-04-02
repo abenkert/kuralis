@@ -239,6 +239,7 @@ class KuralisProduct < ApplicationRecord
     end
   end
 
+  # TODO: We need to possibly look at changes to ebay_product_attribute and shopify_product_attributes
   def should_update_platforms?
     # Attributes that should trigger platform updates when changed
     relevant_attributes = [

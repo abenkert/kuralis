@@ -67,6 +67,9 @@ Rails.application.routes.draw do
     delete "auth", to: "auth#destroy", as: :unlink
     post "notifications", to: "notifications#create"
     resources :listings, only: [ :index ] do
+      member do
+        post :end_listing
+      end
       collection do
         resources :quick_sync, only: [ :create ]
         resources :synchronizations, only: [ :create ]

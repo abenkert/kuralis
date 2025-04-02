@@ -1,57 +1,38 @@
 module Ebay
-  class InventoryService
-    attr_reader :ebay_listing, :product, :shop
+  class EndListingService
+    attr_reader :ebay_listing, :shop
 
-    def initialize(ebay_listing, kuralis_product)
+    def initialize(ebay_listing)
       @ebay_listing = ebay_listing
-      @product = kuralis_product
-      @shop = @product.shop
+      @shop = @ebay_listing.shopify_ebay_account.shop
       @token_service = EbayTokenService.new(@shop)
     end
 
-    def update_inventory
-      if @product.base_quantity <= 0 || @product.status != "active"
-        end_listing
+    def end_listing(reason = "NotAvailable")
+      result = make_api_call("EndFixedPriceItem", build_end_request(reason))
+
+      if result[:success]
+        Rails.logger.info "Successfully ended eBay listing #{@ebay_listing.ebay_item_id}"
+        @ebay_listing.update(ebay_status: "completed", end_time: Time.current)
+        true
       else
-        update_listing
+        Rails.logger.error "Failed to end eBay listing: #{result[:error]}"
+        false
       end
     end
 
     private
 
-    def update_listing
-      result = make_api_call("ReviseFixedPriceItem", build_revise_request)
-
-      if result[:success]
-        Rails.logger.info "Successfully updated eBay listing #{@ebay_listing.ebay_item_id}"
-        @ebay_listing.update(last_updated_at: Time.current)
-        true
-      else
-        Rails.logger.error "Failed to update eBay listing: #{result[:error]}"
-        false
-      end
-    end
-
-    def end_listing
-      end_service = Ebay::EndListingService.new(@ebay_listing)
-      end_service.end_listing("NotAvailable")
-    end
-
-    def build_revise_request
+    def build_end_request(reason)
       <<~XML
         <?xml version="1.0" encoding="utf-8"?>
-        <ReviseFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+        <EndFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
           <RequesterCredentials>
             <eBayAuthToken>#{@token_service.fetch_or_refresh_access_token}</eBayAuthToken>
           </RequesterCredentials>
-          <Item>
-            <ItemID>#{@ebay_listing.ebay_item_id}</ItemID>
-            <Title>#{CGI.escapeHTML(@product.title)}</Title>
-            <Description>#{CGI.escapeHTML(@product.description.to_s)}</Description>
-            <StartPrice>#{@product.base_price}</StartPrice>
-            <Quantity>#{@product.base_quantity}</Quantity>
-          </Item>
-        </ReviseFixedPriceItemRequest>
+          <ItemID>#{@ebay_listing.ebay_item_id}</ItemID>
+          <EndingReason>#{reason}</EndingReason>
+        </EndFixedPriceItemRequest>
       XML
     end
 
