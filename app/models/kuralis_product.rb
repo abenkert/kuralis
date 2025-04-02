@@ -227,15 +227,15 @@ class KuralisProduct < ApplicationRecord
     Rails.logger.info "Scheduling platform updates for #{id}"
     # TODO: Add platform update jobs here
     # TODO: This is where we will schedule the jobs to update the quantity on associated platforms
-    # if ebay_listing.present?
-    #   Ebay::UpdateListingJob.perform_later(ebay_listing.id)
-    #   Rails.logger.info "Scheduled eBay update for listing #{ebay_listing.id} after inventory change"
-    # end
+    if ebay_listing.present?
+      Ebay::UpdateListingJob.perform_later(ebay_listing, kuralis_product)
+      Rails.logger.info "Scheduled eBay update for listing #{ebay_listing.id} after inventory change"
+    end
 
-    # if shopify_product.present?
-    #   Shopify::UpdateProductJob.perform_later(shopify_product.id)
-    #   Rails.logger.info "Scheduled Shopify update for product #{shopify_product.id} after inventory change"
-    # end
+    if shopify_product.present?
+      Shopify::UpdateProductJob.perform_later(shopify_product, kuralis_product)
+      Rails.logger.info "Scheduled Shopify update for product #{shopify_product.id} after inventory change"
+    end
   end
 
   def ensure_warehouse
