@@ -13,7 +13,7 @@ module Ebay
 
       if result[:success]
         Rails.logger.info "Successfully ended eBay listing #{@ebay_listing.ebay_item_id}"
-        @ebay_listing.update(ebay_status: "completed", end_time: Time.current)
+        @ebay_listing.destroy!
         true
       else
         Rails.logger.error "Failed to end eBay listing: #{result[:error]}"

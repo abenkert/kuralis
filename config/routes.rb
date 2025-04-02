@@ -89,7 +89,11 @@ Rails.application.routes.draw do
   end
 
   namespace :shopify do
-    resources :products, only: [ :index ]
+    resources :products, only: [ :index ] do
+      member do
+        post :end_product
+      end
+    end
     resources :synchronizations, only: [ :create ]
   end
 

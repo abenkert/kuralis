@@ -3,7 +3,7 @@ require "sidekiq-scheduler"
 
 Sidekiq.configure_server do |config|
   config.redis = { url: ENV.fetch("REDIS_URL", "redis://localhost:6379/0") }
-  config.queues = [ "default", "images" ]
+  config.queues = [ "default", "images", "ebay", "shopify" ]
 
   # Load the schedule
   schedule_file = File.expand_path("../../sidekiq.yml", __FILE__)

@@ -2,7 +2,7 @@ module Ebay
   class EndListingJob < ApplicationJob
     queue_as :ebay
 
-    def perform(ebay_listing_id, reason = "NotAvailable")
+    def perform(shop_id, ebay_listing_id, reason = "NotAvailable")
       ebay_listing = EbayListing.find(ebay_listing_id)
 
       service = Ebay::EndListingService.new(ebay_listing)

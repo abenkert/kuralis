@@ -17,7 +17,8 @@ class KuralisShopSetting < ApplicationRecord
   BOOLEAN_SETTINGS = [
     "store_location_in_description",
     "store_location_in_specifics",
-    "append_description"
+    "append_description",
+    "archive_products"
   ].freeze
 
   # Scopes

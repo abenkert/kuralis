@@ -123,6 +123,41 @@
                         class: "btn btn-sm btn-secondary",
                         target: "_blank" %>
                   </td>
+                  <td>
+                    <div class="dropdown">
+                      <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        Actions
+                      </button>
+                      <ul class="dropdown-menu dropdown-menu-end">
+                        <% if product.active? %>
+                          <li>
+                            <% action_type = @shop.shopify_archive_products? ? "archive" : "delete" %>
+                            <%= button_to end_product_shopify_product_path(product), 
+                                method: :post,
+                                class: "dropdown-item text-danger",
+                                data: { 
+                                  turbo: true,
+                                  turbo_confirm: "Are you sure you want to #{action_type} this Shopify product? #{action_type == 'delete' ? 'This action cannot be undone.' : 'Archived products can be restored in Shopify.'}"
+                                } do %>
+                              <i class="bi bi-x-circle me-2"></i><%= action_type.capitalize %> Product
+                            <% end %>
+                          </li>
+                        <% end %>
+                        <% if product.kuralis_product.blank? %>
+                          <li>
+                            <%= link_to "#", class: "dropdown-item" do %>
+                              <i class="bi bi-box me-2"></i>Create Product
+                            <% end %>
+                          </li>
+                        <% end %>
+                        <li>
+                          <%= link_to "#", class: "dropdown-item" do %>
+                            <i class="bi bi-arrow-repeat me-2"></i>Sync Details
+                          <% end %>
+                        </li>
+                      </ul>
+                    </div>
+                  </td>
                 </tr>
               <% end %>
             <% else %>

@@ -6,6 +6,7 @@ module Shopify
       @shopify_product = shopify_product
       @product = kuralis_product
       @shop = @product.shop
+      @client = ShopifyAPI::Clients::Graphql::Admin.new(session: @shop.shopify_session)
     end
 
     def update_inventory
@@ -19,48 +20,86 @@ module Shopify
     private
 
     def update_product
-      shopify_api.update_product(@shopify_product.shopify_id, product_data)
-      @shopify_product.update(last_updated_at: Time.current)
-      Rails.logger.info "Updated Shopify product #{@shopify_product.shopify_id} with latest information"
-      true
+      result = @client.query(
+        query: update_product_mutation,
+        variables: {
+          input: {
+            id: @shopify_product.gid,
+            title: @product.title,
+            descriptionHtml: @product.description.to_s,
+            status: "ACTIVE"
+          },
+          inventoryLevels: [
+            {
+              inventoryItemId: @shopify_product.variant_gid,
+              locationId: @shop.default_location_id,
+              available: @product.base_quantity
+            }
+          ],
+          variantInput: {
+            id: @shopify_product.variant_gid,
+            price: @product.base_price.to_s
+          }
+        }
+      )
+
+      if result.body["data"] && result.body["data"]["productUpdate"] && result.body["data"]["productUpdate"]["product"]
+        @shopify_product.update(last_updated_at: Time.current)
+        Rails.logger.info "Updated Shopify product #{@shopify_product.shopify_product_id} with latest information"
+        true
+      else
+        error_message = result.body["errors"] || result.body["data"]&.dig("productUpdate", "userErrors")
+        Rails.logger.error "Failed to update Shopify product: #{error_message}"
+        false
+      end
     rescue => e
       Rails.logger.error "Failed to update Shopify product: #{e.message}"
       false
     end
 
     def disable_product
-      # For Shopify, we'll unpublish the product instead of removing it completely
-      data = product_data.merge(status: "draft")
-      shopify_api.update_product(@shopify_product.shopify_id, data)
-      @shopify_product.update(shopify_status: "unpublished", unpublished_at: Time.current)
-      Rails.logger.info "Unpublished Shopify product #{@shopify_product.shopify_id}"
-      true
-    rescue => e
-      Rails.logger.error "Failed to unpublish Shopify product: #{e.message}"
-      false
+      # For Shopify, we'll use the EndProductService to handle unpublishing
+      end_service = Shopify::EndProductService.new(@shopify_product)
+      end_service.end_product
     end
 
-    def product_data
-      {
-        title: @product.title,
-        body_html: @product.description.to_s,
-        variants: [
-          {
-            id: @shopify_product.primary_variant_id,
-            price: @product.base_price.to_s,
-            inventory_quantity: @product.base_quantity,
-            inventory_management: "shopify"
+    private
+
+    def update_product_mutation
+      <<~GQL
+        mutation productUpdate($input: ProductInput!, $inventoryLevels: [InventoryLevelInput!]!, $variantInput: ProductVariantInput!) {
+          productUpdate(input: $input) {
+            product {
+              id
+              title
+              status
+            }
+            userErrors {
+              field
+              message
+            }
           }
-        ],
-        status: @product.status == "active" ? "active" : "draft"
-      }
-    end
-
-    def shopify_api
-      @shopify_api ||= ShopifyAPI::Client.new(
-        shop: @shop.shopify_domain,
-        access_token: @shop.shopify_token
-      )
+          productVariantUpdate(input: $variantInput) {
+            productVariant {
+              id
+              price
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+          inventoryBulkAdjust(inventoryLevelInput: $inventoryLevels) {
+            inventoryLevels {
+              available
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      GQL
     end
   end
 end

@@ -87,7 +87,11 @@ class Shop < ApplicationRecord
   end
 
   def default_description
-    get_setting("general", "default_description")
+    get_setting("general", "default_description") || ""
+  end
+
+  def shopify_archive_products?
+    get_setting("shopify", "archive_products") || true
   end
 
   private

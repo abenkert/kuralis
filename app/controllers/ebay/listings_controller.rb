@@ -12,7 +12,7 @@ module Ebay
       @listing = current_shop.shopify_ebay_account.ebay_listings.find(params[:id])
 
       if @listing
-        Ebay::EndListingJob.perform_later(@listing.id, params[:reason] || "NotAvailable")
+        Ebay::EndListingJob.perform_later(current_shop.id, @listing.id, params[:reason] || "NotAvailable")
 
         respond_to do |format|
           format.html do

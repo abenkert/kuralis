@@ -229,12 +229,12 @@ class KuralisProduct < ApplicationRecord
     Rails.logger.info "Scheduling platform updates for #{id}"
 
     if ebay_listing.present?
-      Ebay::UpdateListingJob.perform_later(ebay_listing, self)
+      Ebay::UpdateListingJob.perform_later(shop.id, ebay_listing, self)
       Rails.logger.info "Scheduled eBay update for listing #{ebay_listing.id} after product change"
     end
 
     if shopify_product.present?
-      Shopify::UpdateProductJob.perform_later(shopify_product, self)
+      Shopify::UpdateProductJob.perform_later(shop.id, shopify_product, self)
       Rails.logger.info "Scheduled Shopify update for product #{shopify_product.id} after product change"
     end
   end
