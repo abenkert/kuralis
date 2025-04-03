@@ -105,9 +105,27 @@ class KuralisProduct < ApplicationRecord
     errors << "eBay category is required" if attrs.category_id.blank?
     errors << "eBay condition is required" if attrs.condition_id.blank?
     errors << "Listing duration is required" if attrs.listing_duration.blank?
-    errors << "Shipping policy is required" if attrs.shipping_profile_id.blank?
-    errors << "Return policy is required" if attrs.return_profile_id.blank?
-    errors << "Payment policy is required" if attrs.payment_profile_id.blank?
+
+    # For payment, shipping, and return policies, check both the attribute and the default setting
+    shop = self.shop
+
+    # Check shipping policy
+    if attrs.shipping_profile_id.blank?
+      default_shipping = shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_shipping_policy")
+      errors << "Shipping policy is required" if default_shipping.blank?
+    end
+
+    # Check payment policy
+    if attrs.payment_profile_id.blank?
+      default_payment = shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_payment_policy")
+      errors << "Payment policy is required" if default_payment.blank?
+    end
+
+    # Check return policy
+    if attrs.return_profile_id.blank?
+      default_return = shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_return_policy")
+      errors << "Return policy is required" if default_return.blank?
+    end
 
     # Check for attached images
     errors << "At least one product image is required" unless images.attached?

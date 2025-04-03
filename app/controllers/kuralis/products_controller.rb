@@ -206,8 +206,31 @@ module Kuralis
       ebay_errors = product.validate_for_ebay_listing
 
       if ebay_errors.empty?
+        # Apply default eBay settings if needed
+        if product.ebay_product_attribute
+          ebay_attr = product.ebay_product_attribute
+
+          # Apply default shipping policy if not set
+          if ebay_attr.shipping_profile_id.blank?
+            default_shipping = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_shipping_policy")
+            ebay_attr.update(shipping_profile_id: default_shipping) if default_shipping.present?
+          end
+
+          # Apply default payment policy if not set
+          if ebay_attr.payment_profile_id.blank?
+            default_payment = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_payment_policy")
+            ebay_attr.update(payment_profile_id: default_payment) if default_payment.present?
+          end
+
+          # Apply default return policy if not set
+          if ebay_attr.return_profile_id.blank?
+            default_return = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_return_policy")
+            ebay_attr.update(return_profile_id: default_return) if default_return.present?
+          end
+        end
+
         # Schedule an eBay listing job
-        EbayListingJob.perform_later(product.id)
+        Ebay::CreateListingJob.perform_later(shop_id: current_shop.id, kuralis_product_id: product.id)
         flash[:notice] = "Product created and eBay listing scheduled."
       else
         # Product was created but couldn't be listed on eBay

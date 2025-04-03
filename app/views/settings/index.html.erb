@@ -57,6 +57,31 @@
             </div>
           </div>
 
+          <!-- General Settings Section -->
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#ebayDefaults">
+                eBay Defaults
+              </button>
+            </h2>
+            
+            <div id="ebayDefaults" class="accordion-collapse collapse">
+              <div class="accordion-body">
+                <% if @ebay_account_linked %>
+                  <%= turbo_frame_tag "ebay_defaults_form" do %> 
+                    <%= render "ebay_defaults_form" %>
+                  <% end %>
+                <% else %>
+                  <div class="text-center py-3">
+                    <p class="text-muted mb-0">
+                      Link your eBay account to manage default profiles.
+                    </p>
+                <% end %>
+              </div> 
+            </div>
+          </div>
+
+
           <!-- Shipping Profiles Section -->
           <div class="accordion-item">
             <h2 class="accordion-header">

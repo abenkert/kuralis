@@ -1,0 +1,45 @@
+
+<%= form_with url: kuralis_settings_path, method: :patch, class: "settings-form", id: "ebay_defaults_form" do |f| %>
+    <div class="row g-3">
+    <!-- Shipping Profile -->
+    <div class="col-12">
+        <label class="form-label">Default Shipping Profile</label>
+        <%= f.select "settings[ebay][default_shipping_policy]",
+            options_for_select(
+                @shop.shopify_ebay_account.shipping_profiles.map { |p| [p["name"], p["id"]] },
+                KuralisShopSetting.get_setting(@shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_shipping_policy')
+            ),
+            { include_blank: "Select a shipping profile" },
+            class: "form-select" %>
+    </div>
+
+    <!-- Payment Profile -->
+    <div class="col-12">
+        <label class="form-label">Default Payment Profile</label>
+        <%= f.select "settings[ebay][default_payment_policy]",
+            options_for_select(
+                @shop.shopify_ebay_account.payment_profiles.map { |p| [p["profile_name"] || p["name"], p["profile_id"] || p["id"]] },
+                KuralisShopSetting.get_setting(@shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_payment_policy')
+            ),
+            { include_blank: "Select a payment profile" },
+            class: "form-select" %>
+    </div>
+
+    <!-- Return Profile -->
+    <div class="col-12">
+        <label class="form-label">Default Return Profile</label>
+        <%= f.select "settings[ebay][default_return_policy]",
+            options_for_select(
+                @shop.shopify_ebay_account.return_profiles.map { |p| [p["profile_name"] || p["name"], p["profile_id"] || p["id"]] },
+                KuralisShopSetting.get_setting(@shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_return_policy')
+            ),
+            { include_blank: "Select a return profile" },
+            class: "form-select" %>
+    </div>
+    </div>
+    
+    <div class="mt-4">
+    <%= f.submit "Save Defaults", class: "btn btn-primary" %>
+    </div>
+<% end %>
+
