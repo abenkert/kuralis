@@ -14,7 +14,7 @@ module Shopify
           "synchronous": true,
           "productSet": {
             "title": @product.title,
-            "descriptionHtml": escape_html(@product.description),
+            "descriptionHtml": build_item_description,
             "tags": @product.tags,
             "files": prepare_product_images,
             "productOptions": [
@@ -109,6 +109,19 @@ module Shopify
       Rails.logger.error "Error creating Shopify product: #{e.message}"
       Rails.logger.error e.backtrace.join("\n")
       false
+    end
+
+    def build_item_description
+      description = @product.description
+      if @shop.store_location_in_description?
+        description = "#{@product.location}\n\n#{description}"
+      end
+
+      if @shop.append_description?
+        description += "\n\n#{@shop.default_description}"
+      end
+
+      description
     end
 
     private
