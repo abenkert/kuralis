@@ -357,8 +357,14 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
+  // Track initialization to prevent multiple loads
+  let chartsInitialized = false;
+  
   // Function to initialize charts
   function initializeCharts() {
+    // Only initialize once
+    if (chartsInitialized) return;
+    
     // Product Distribution Chart
     const distributionCanvas = document.getElementById('productDistributionChart');
     if (distributionCanvas) {
@@ -474,14 +480,35 @@
         }
       });
     }
+    
+    // Mark as initialized to prevent duplicate loads
+    chartsInitialized = true;
   }
 
-  // Initialize charts on initial page load
-  document.addEventListener('DOMContentLoaded', initializeCharts);
+  // Ensure Chart.js is loaded, then initialize charts once
+  function attemptInitialization() {
+    // Don't proceed if already initialized
+    if (chartsInitialized) return;
+    
+    if (typeof Chart !== 'undefined') {
+      initializeCharts();
+    } else {
+      // Only schedule one more attempt
+      if (!window._chartRetryScheduled) {
+        window._chartRetryScheduled = true;
+        setTimeout(attemptInitialization, 300);
+      }
+    }
+  }
+
+  // Reset initialization state on page navigation
+  document.addEventListener('turbo:before-visit', function() {
+    chartsInitialized = false;
+    window._chartRetryScheduled = false;
+  });
   
-  // Initialize charts on Turbo navigation
-  document.addEventListener('turbo:load', initializeCharts);
-  
-  // For backwards compatibility with Turbolinks
-  document.addEventListener('turbolinks:load', initializeCharts);
+  // Set up single initialization point for each page lifecycle
+  document.addEventListener('DOMContentLoaded', attemptInitialization);
+  document.addEventListener('turbo:load', attemptInitialization);
+  document.addEventListener('turbolinks:load', attemptInitialization);
 </script>
