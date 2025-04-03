@@ -91,7 +91,8 @@ class Shop < ApplicationRecord
   end
 
   def shopify_archive_products?
-    get_setting("shopify", "archive_products") || true
+    setting = get_setting("shopify", "archive_products")
+    setting.nil? ? true : setting
   end
 
   private

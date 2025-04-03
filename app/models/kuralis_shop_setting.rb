@@ -28,6 +28,7 @@ class KuralisShopSetting < ApplicationRecord
   class << self
     def get_setting(shop, category, key)
       setting = find_by(shop: shop, category: category, key: key)
+      # TODO: Should we just return a default false if the setting is not found?
       return nil unless setting
 
       if BOOLEAN_SETTINGS.include?(key)

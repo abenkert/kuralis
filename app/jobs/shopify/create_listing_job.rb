@@ -3,7 +3,7 @@ module Shopify
     def perform(kuralis_product_id)
       product = KuralisProduct.find(kuralis_product_id)
 
-      service = ShopifyListingService.new(product)
+      service = Shopify::ListingService.new(product)
       success = service.create_listing
 
       if success

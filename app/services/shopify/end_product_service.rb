@@ -31,7 +31,7 @@ module Shopify
 
       if result.body["data"] && result.body["data"]["productUpdate"] && result.body["data"]["productUpdate"]["product"]
         Rails.logger.info "Successfully archived Shopify product #{@shopify_product.shopify_product_id}"
-        @shopify_product.update(status: "archived", unpublished_at: Time.current)
+        @shopify_product.update(status: "archived")
         true
       else
         error_message = result.body["errors"] || result.body["data"]&.dig("productUpdate", "userErrors")
