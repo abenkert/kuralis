@@ -180,7 +180,7 @@
           <% else %>
             <%= form.submit "Update Product", class: "btn btn-primary me-md-2" %>
             <% if !@product.listed_on_ebay? %>
-              <%= form.submit "Update and List on eBay", name: "list_on_ebay", id: "update-and-list-ebay", class: "btn btn-warning" %>
+              <%= form.submit "Update and List on eBay", name: "list_on_ebay", id: "update-and-list-ebay", class: "btn btn-warning disabled" %>
             <% end %>
           <% end %>
         </div>
