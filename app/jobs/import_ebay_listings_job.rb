@@ -143,7 +143,12 @@ class ImportEbayListingsJob < ApplicationJob
   end
 
   def prepare_description(description)
-    CGI.unescapeHTML(description)
+    # First unescape HTML entities
+    unescaped = CGI.unescapeHTML(description)
+    # Then strip all HTML tags while preserving line breaks
+    stripped = ActionView::Base.full_sanitizer.sanitize(unescaped, tags: [])
+    # Convert multiple consecutive line breaks to just two
+    stripped.gsub(/[\r\n]{3,}/, "\n\n").strip
   end
 
   def find_location(description)
