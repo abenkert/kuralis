@@ -87,7 +87,9 @@
             <div class="row mb-3">
               <div class="col-md-6">
                 <div class="form-group">
-                  <%= form.label :title, class: "form-label" %>
+                  <%= form.label :title, class: "form-label" do %>
+                    Title <span class="text-danger">*</span>
+                  <% end %>
                   <%= form.text_field :title, class: "form-control", required: true %>
                   <div class="invalid-feedback">Title is required</div>
                 </div>
@@ -104,8 +106,11 @@
             <div class="row mb-3">
               <div class="col-md-12">
                 <div class="form-group">
-                  <%= form.label :description, class: "form-label" %>
-                  <%= form.text_area :description, class: "form-control", rows: 4 %>
+                  <%= form.label :description, class: "form-label" do %>
+                    Description <span class="text-danger">*</span>
+                  <% end %>
+                  <%= form.text_area :description, class: "form-control", rows: 4, required: true %>
+                  <div class="invalid-feedback">Description is required</div>
                 </div>
               </div>
             </div>
@@ -113,52 +118,38 @@
             <div class="row mb-3">
               <div class="col-md-4">
                 <div class="form-group">
-                  <%= form.label :base_price, "Price", class: "form-label" %>
+                  <%= form.label :base_price, "Price", class: "form-label" do %>
+                    Price <span class="text-danger">*</span>
+                  <% end %>
                   <div class="input-group">
                     <span class="input-group-text">$</span>
-                    <%= form.number_field :base_price, class: "form-control", step: "0.01", min: "0" %>
+                    <%= form.number_field :base_price, class: "form-control", step: "0.01", min: "0", required: true %>
+                    <div class="invalid-feedback">Price is required</div>
                   </div>
                 </div>
               </div>
               <div class="col-md-4">
                 <div class="form-group">
-                  <%= form.label :base_quantity, "Quantity", class: "form-label" %>
+                  <%= form.label :base_quantity, "Quantity", class: "form-label" do %>
+                    Quantity <span class="text-danger">*</span>
+                  <% end %>
                   <%= form.number_field :base_quantity, class: "form-control", min: "0", required: true %>
+                  <div class="invalid-feedback">Quantity is required</div>
                 </div>
               </div>
               <div class="col-md-4">
                 <div class="form-group">
-                  <%= form.label :weight_oz, "Weight (oz)", class: "form-label" %>
-                  <%= form.number_field :weight_oz, class: "form-control", step: "0.01", min: "0" %>
+                  <%= form.label :weight_oz, "Weight (oz)", class: "form-label" do %>
+                    Weight (oz) <span class="text-danger">*</span>
+                  <% end %>
+                  <%= form.number_field :weight_oz, class: "form-control", step: "0.01", min: "0", required: true %>
+                  <div class="invalid-feedback">Weight is required</div>
                   <small class="form-text text-muted">Weight in ounces</small>
                 </div>
               </div>
             </div>
 
             <div class="row mb-3">
-              <div class="col-md-4">
-                <div class="form-group">
-                  <%= form.label :brand, class: "form-label" %>
-                  <%= form.text_field :brand, class: "form-control" %>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="form-group">
-                  <%= form.label :condition, class: "form-label" %>
-                  <%= form.select :condition, 
-                      [
-                        ["New", "New"], 
-                        ["Used - Like New", "Used - Like New"],
-                        ["Used - Very Good", "Used - Very Good"],
-                        ["Used - Good", "Used - Good"],
-                        ["Used - Acceptable", "Used - Acceptable"],
-                        ["For Parts or Not Working", "For Parts or Not Working"]
-                      ], 
-                      { include_blank: "Select Condition" }, 
-                      { class: "form-select" } 
-                  %>
-                </div>
-              </div>
               <div class="col-md-4">
                 <div class="form-group">
                   <%= form.label :location, class: "form-label" %>
@@ -187,7 +178,10 @@
           <% if @product.draft? && params[:finalize] == 'true' %>
             <%= form.submit "Finalize Product", class: "btn btn-primary" %>
           <% else %>
-            <%= form.submit "Update Product", class: "btn btn-primary" %>
+            <%= form.submit "Update Product", class: "btn btn-primary me-md-2" %>
+            <% if !@product.listed_on_ebay? %>
+              <%= form.submit "Update and List on eBay", name: "list_on_ebay", id: "update-and-list-ebay", class: "btn btn-warning" %>
+            <% end %>
           <% end %>
         </div>
       <% end %>
@@ -202,12 +196,122 @@
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('product_images');
     const previewContainer = document.getElementById('imagePreviewContainer');
+    const ebayTab = document.getElementById('ebay-info');
     
     // Form validation
     form.addEventListener('submit', function(event) {
-      if (!form.checkValidity()) {
+      let isValid = true;
+      
+      // Check if there are any images already attached or being uploaded
+      const hasExistingImages = document.querySelectorAll('.existing-image-preview:not([style*="display: none"])').length > 0;
+      const hasNewImages = fileInput.files.length > 0;
+      
+      if (!hasExistingImages && !hasNewImages) {
+        isValid = false;
+        // Create a validation message for images if it doesn't exist
+        let imageError = document.getElementById('image-validation-error');
+        if (!imageError) {
+          imageError = document.createElement('div');
+          imageError.id = 'image-validation-error';
+          imageError.className = 'alert alert-danger mt-2';
+          imageError.innerText = 'At least one product image is required';
+          dropzone.after(imageError);
+        }
+        dropzone.style.borderColor = '#dc3545';
+      } else {
+        // Remove error message if exists
+        const imageError = document.getElementById('image-validation-error');
+        if (imageError) imageError.remove();
+        dropzone.style.borderColor = '';
+      }
+      
+      // Get all fields marked with required attribute
+      const requiredFields = form.querySelectorAll('[required]');
+      requiredFields.forEach(field => {
+        if (!field.value.trim()) {
+          isValid = false;
+          field.classList.add('is-invalid');
+          
+          // Ensure parent tab is visible if validation fails
+          const tabPane = field.closest('.tab-pane');
+          if (tabPane && !tabPane.classList.contains('show')) {
+            // Get the tab ID
+            const tabId = tabPane.id;
+            // Find the corresponding tab button and click it
+            document.querySelector(`[data-bs-target="#${tabId}"]`).click();
+          }
+        } else {
+          field.classList.remove('is-invalid');
+        }
+      });
+      
+      // Add a flag to check if user wants to list on eBay now
+      // For edit form we won't validate eBay fields unless there's a specific button for it
+      let listOnEbayNow = false;
+      
+      // If there's a "Update and List on eBay" button, check if it was clicked
+      if (event.submitter && event.submitter.id === 'update-and-list-ebay') {
+        listOnEbayNow = true;
+      }
+      
+      // Only check eBay fields if user explicitly wants to list on eBay immediately
+      if (listOnEbayNow) {
+        // Check eBay required fields, which are marked with an asterisk but not the required attribute
+        // Find all fields in eBay tab with asterisk in label
+        const ebayFields = ebayTab.querySelectorAll('.form-group label span.text-danger');
+        ebayFields.forEach(asterisk => {
+          // Get the associated input field
+          const label = asterisk.closest('label');
+          const forAttr = label.getAttribute('for');
+          const field = document.getElementById(forAttr) || 
+                       label.closest('.form-group').querySelector('input, select, textarea');
+          
+          if (field && !field.value.trim()) {
+            isValid = false;
+            field.classList.add('is-invalid');
+            
+            // Make sure the eBay tab is visible
+            if (!ebayTab.classList.contains('show')) {
+              document.querySelector('[data-bs-target="#ebay-info"]').click();
+            }
+          } else if (field) {
+            field.classList.remove('is-invalid');
+          }
+        });
+      }
+      
+      if (!isValid) {
         event.preventDefault();
         event.stopPropagation();
+        
+        // Show alert at top of form
+        let formAlert = document.getElementById('form-validation-alert');
+        if (!formAlert) {
+          formAlert = document.createElement('div');
+          formAlert.id = 'form-validation-alert';
+          formAlert.className = 'alert alert-danger mb-4';
+          
+          // Check if errors are in eBay tab
+          const ebayTabErrors = ebayTab.querySelectorAll('.is-invalid').length > 0;
+          
+          let alertText = 'Please fill in all required fields marked with *';
+          if (ebayTabErrors && listOnEbayNow) {
+            alertText += '. Some required fields on the eBay Listing tab need attention for eBay listing.';
+          }
+          
+          formAlert.innerText = alertText;
+          form.prepend(formAlert);
+        }
+        
+        // Scroll to the first invalid field
+        const firstInvalid = form.querySelector('.is-invalid');
+        if (firstInvalid) {
+          firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else {
+        // Remove the alert if form is valid
+        const formAlert = document.getElementById('form-validation-alert');
+        if (formAlert) formAlert.remove();
       }
       
       form.classList.add('was-validated');

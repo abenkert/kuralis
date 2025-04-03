@@ -19,7 +19,8 @@ class EbayProductAttribute < ApplicationRecord
     # Modified validation to allow new records temporarily
     validates :kuralis_product_id, uniqueness: true, if: -> { kuralis_product_id.present? }
 
-    # Add validations for eBay-specific fields
+    # Validations will be checked at listing time instead of at product creation time
+    # so users can create products without eBay information
 
     # Always use fixed price format
     def listing_format

@@ -4,6 +4,7 @@
       <p class="text-muted mb-4">
         Configure eBay-specific details for this product. These settings will be used when you list this product on eBay.
       </p>
+      <span class="text-danger">Fields marked with * are required only if you want to list this product on eBay.</span>
     </div>
   </div>
   
@@ -11,7 +12,9 @@
     <div class="col-md-6">
       <div class="form-group">
         <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
-          <%= ebay_fields.label :category_id, "eBay Category", class: "form-label" %>
+          <%= ebay_fields.label :category_id, "eBay Category", class: "form-label" do %>
+            eBay Category <span class="text-danger">*</span>
+          <% end %>
           <%= ebay_fields.text_field :category_id, 
               class: "form-control", 
               data: { 
@@ -22,6 +25,7 @@
                 }.to_json 
               } 
           %>
+          <div class="invalid-feedback">eBay category is required for listing on eBay</div>
           <small class="form-text text-muted">Search for the most specific category for your product</small>
         <% end %>
       </div>
@@ -44,7 +48,9 @@
     <div class="col-md-6">
       <div class="form-group">
         <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
-          <%= ebay_fields.label :condition_id, "eBay Condition", class: "form-label" %>
+          <%= ebay_fields.label :condition_id, "eBay Condition", class: "form-label" do %>
+            eBay Condition <span class="text-danger">*</span>
+          <% end %>
           <%= ebay_fields.select :condition_id, 
               [
                 ["Brand New", "1000"],
@@ -56,13 +62,16 @@
               { include_blank: "Select Condition" }, 
               { class: "form-select" } 
           %>
+          <div class="invalid-feedback">eBay condition is required for listing on eBay</div>
         <% end %>
       </div>
     </div>
     <div class="col-md-6">
       <div class="form-group">
         <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
-          <%= ebay_fields.label :listing_duration, "Listing Duration", class: "form-label" %>
+          <%= ebay_fields.label :listing_duration, "Listing Duration", class: "form-label" do %>
+            Listing Duration <span class="text-danger">*</span>
+          <% end %>
           <%= ebay_fields.select :listing_duration, 
               [
                 ["Good 'Til Cancelled", "GTC"],
@@ -76,6 +85,7 @@
               { include_blank: "Select Duration" }, 
               { class: "form-select" } 
           %>
+          <div class="invalid-feedback">Listing duration is required for listing on eBay</div>
         <% end %>
       </div>
     </div>

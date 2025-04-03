@@ -29,6 +29,9 @@ module Kuralis
       @product = current_shop.kuralis_products.new(product_params)
       @product.source_platform = "kuralis"
 
+      # Flag to track if we should list on eBay immediately
+      list_on_ebay = params[:list_on_ebay].present?
+
       # If this was a draft product, mark it as finalized
       if params[:draft_id].present?
         draft = current_shop.kuralis_products.draft.find(params[:draft_id])
@@ -43,6 +46,11 @@ module Kuralis
 
         # Delete the draft if successful
         if @product.save
+          # Check if we should try to list on eBay
+          if list_on_ebay
+            handle_ebay_listing(@product)
+          end
+
           draft.destroy
           redirect_to kuralis_products_path, notice: "Product was successfully created from draft."
         else
@@ -51,6 +59,11 @@ module Kuralis
       else
         # Normal product creation flow
         if @product.save
+          # Check if we should try to list on eBay
+          if list_on_ebay
+            handle_ebay_listing(@product)
+          end
+
           redirect_to kuralis_products_path, notice: "Product was successfully created."
         else
           render :new, status: :unprocessable_entity
@@ -132,6 +145,11 @@ module Kuralis
         end
       else
         if @product.update(product_attrs)
+          # Check if we should list on eBay
+          if params[:list_on_ebay].present? && !@product.listed_on_ebay?
+            handle_ebay_listing(@product)
+          end
+
           redirect_to kuralis_products_path, notice: "Product was successfully updated."
         else
           render :edit, status: :unprocessable_entity
@@ -180,6 +198,22 @@ module Kuralis
           { item_specifics: {} }
         ]
       )
+    end
+
+    # Handle the eBay listing process
+    def handle_ebay_listing(product)
+      # Validate eBay attributes
+      ebay_errors = product.validate_for_ebay_listing
+
+      if ebay_errors.empty?
+        # Schedule an eBay listing job
+        EbayListingJob.perform_later(product.id)
+        flash[:notice] = "Product created and eBay listing scheduled."
+      else
+        # Product was created but couldn't be listed on eBay
+        error_messages = ebay_errors.join(", ")
+        flash[:alert] = "Product was created but could not be listed on eBay: #{error_messages}. Please update the eBay information and try listing again."
+      end
     end
   end
 end

@@ -20,8 +20,10 @@ class KuralisProduct < ApplicationRecord
   accepts_nested_attributes_for :ebay_product_attribute, reject_if: :all_blank
 
   validates :title, presence: true
-  validates :base_price, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
-  validates :base_quantity, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :description, presence: true
+  validates :base_price, numericality: { greater_than: 0 }, presence: true
+  validates :base_quantity, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, presence: true
+  validates :weight_oz, numericality: { greater_than: 0 }, presence: true
   validates :status, presence: true
 
   # Scopes
@@ -87,6 +89,35 @@ class KuralisProduct < ApplicationRecord
     platforms << "shopify" if listed_on_shopify?
     platforms << "ebay" if listed_on_ebay?
     platforms
+  end
+
+  # Validate eBay attributes before listing
+  def validate_for_ebay_listing
+    errors = []
+
+    unless has_ebay_attributes?
+      errors << "eBay product attributes are missing"
+      return errors
+    end
+
+    attrs = ebay_product_attribute
+
+    errors << "eBay category is required" if attrs.category_id.blank?
+    errors << "eBay condition is required" if attrs.condition_id.blank?
+    errors << "Listing duration is required" if attrs.listing_duration.blank?
+    errors << "Shipping policy is required" if attrs.shipping_profile_id.blank?
+    errors << "Return policy is required" if attrs.return_profile_id.blank?
+    errors << "Payment policy is required" if attrs.payment_profile_id.blank?
+
+    # Check for attached images
+    errors << "At least one product image is required" unless images.attached?
+
+    errors
+  end
+
+  # Check if product can be listed on eBay
+  def can_list_on_ebay?
+    validate_for_ebay_listing.empty?
   end
 
   # Draft methods
