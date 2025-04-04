@@ -13,10 +13,6 @@ Sidekiq.configure_server do |config|
     Sidekiq::Scheduler.dynamic = true
     Sidekiq.schedule = schedule[:scheduler][:schedule]
   end
-  # config.periodic do |mgr|
-  #   mgr.register('*/5 * * * *', 'FetchEbayOrdersJob', retry: false)
-  #   mgr.register('*/5 * * * *', 'FetchShopifyOrdersJob', retry: false)
-  # end
 end
 
 Sidekiq.configure_client do |config|
