@@ -23,16 +23,20 @@ console_command = "/rails/bin/rails console"
     handlers = ["tls", "http"]
     port = 443
 
+[processes]
+  app = ["./bin/rails", "server", "-b", "0.0.0.0", "-p", "8080"]
+  worker = ["bundle", "exec", "sidekiq"]
+
 [[vm]]
   processes = ["app"]
   memory = "1gb"
   cpu_kind = "shared"
   cpus = 1
 
-[[processes]]
-  name = "app"
-  cmd = ["./bin/rails", "server", "-b", "0.0.0.0", "-p", "8080"]
+[[vm]]
+  processes = ["worker"]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
 
-[[processes]]
-  name = "worker"
-  cmd = ["bundle", "exec", "sidekiq"]
+
