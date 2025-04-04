@@ -24,8 +24,8 @@ console_command = "/rails/bin/rails console"
     port = 443
 
 [processes]
-  app = ["./bin/rails", "server", "-b", "0.0.0.0", "-p", "8080"]
-  worker = ["bundle", "exec", "sidekiq"]
+  app = "./bin/rails server -b 0.0.0.0 -p 8080"
+  worker = "bundle exec sidekiq"
 
 [[vm]]
   processes = ["app"]
