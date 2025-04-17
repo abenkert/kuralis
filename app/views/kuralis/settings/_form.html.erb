@@ -1,0 +1,44 @@
+<%= form_with url: kuralis_settings_path, method: :patch, class: "settings-form", id: "settings_form" do |f| %>
+  <div class="mb-3">
+    <label class="form-label">Default Description</label>
+    <%= f.text_area "settings[general][default_description]",
+          value: @shop.default_description,
+          class: "form-control",
+          rows: 4 %>
+    <div class="form-text">This description will be used as a template for your listings.</div>
+  </div>
+
+  <div class="mb-3">
+    <div class="form-check mb-2">
+      <%= f.check_box "settings[general][append_description]",
+            checked: @shop.append_description?,
+            class: "form-check-input" %>
+      <label class="form-check-label">
+        Append Default Description to Listing
+      </label>
+      <div class="form-text">When enabled, the default description will be added below any custom description set for individual listings.</div>
+    </div>
+
+    <div class="form-check mb-2">
+      <%= f.check_box "settings[general][store_location_in_description]",
+            checked: @shop.store_location_in_description?,
+            class: "form-check-input" %>
+      <label class="form-check-label">
+        Store Item Location in Description
+      </label>
+    </div>
+
+    <div class="form-check">
+      <%= f.check_box "settings[general][store_location_in_specifics]",
+            checked: @shop.store_location_in_specifics?,
+            class: "form-check-input" %>
+      <label class="form-check-label">
+        Store Item Location in Specifics
+      </label>
+    </div>
+  </div>
+
+  <div>
+    <%= f.submit "Save Settings", class: "btn btn-primary" %>
+  </div>
+<% end %> 

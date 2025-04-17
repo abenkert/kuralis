@@ -11,6 +11,7 @@ class HomeController < ApplicationController
     else
       @shop_origin = current_shopify_domain
       @host = params[:host]
+      redirect_to dashboard_path
     end
   end
 end

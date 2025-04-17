@@ -1,0 +1,206 @@
+<div class="container" data-controller="listing-selection">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>eBay Listings</h1>
+    
+    <div class="dropdown">
+      <button class="btn btn-primary dropdown-toggle" 
+              type="button" 
+              id="actionDropdown" 
+              data-bs-toggle="dropdown" 
+              aria-expanded="false">
+        Actions
+      </button>
+      
+      <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="actionDropdown">
+        <li>
+          <%= button_to ebay_synchronizations_path,
+              method: :post,
+              class: "dropdown-item d-flex align-items-center",
+              data: { 
+                turbo: true,
+                controller: "sync",
+                action: "sync#startSync"
+              } do %>
+            <div class="d-flex align-items-center">
+              <span class="sync-text">Sync Listings</span>
+              <div class="spinner-border spinner-border-sm ms-2 d-none" 
+                   data-sync-target="spinner" 
+                   role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          <% end %>
+        </li>
+          <%= button_to ebay_quick_sync_index_path,
+              method: :post,
+              class: "dropdown-item d-flex align-items-center",
+              data: { turbo: true } do %>
+            <div class="d-flex align-items-center">
+              <span class="sync-text">Quick Sync</span>
+              <div class="spinner-border spinner-border-sm ms-2 d-none" 
+                   data-sync-target="spinner" 
+                   role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          <% end %>
+        <li>
+          <button type="button" 
+                  class="dropdown-item" 
+                  data-listing-selection-target="migrateSelected"
+                  data-action="click->listing-selection#migrate"
+                  disabled>
+            Migrate Selected (<span data-listing-selection-target="selectedCount">0</span>)
+          </button>
+        </li>
+        
+        <li>
+          <button type="button" 
+                  class="dropdown-item" 
+                  id="migrateAll"
+                  data-action="click->listing-selection#migrateAll">
+            Migrate All
+          </button>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>
+                <input type="checkbox" 
+                       class="form-check-input" 
+                       data-listing-selection-target="selectAll"
+                       data-action="input->listing-selection#toggleAll">
+              </th>
+              <th>Image</th>
+              <th>Title</th>
+              <th>Price</th>
+              <th>Quantity</th>
+              <th>Status</th>
+              <th>Last Synced</th>
+              <th>Kuralis Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if @listings.any? %>
+              <% @listings.each do |listing| %>
+                <tr>
+                  <td>
+                    <input type="checkbox" 
+                           class="form-check-input" 
+                           value="<%= listing.id %>"
+                           data-listing-selection-target="checkbox"
+                           data-action="input->listing-selection#toggleOne"
+                           <%= 'disabled' if listing.kuralis_product.present? %>>
+                  </td>
+                  <td>
+                    <% if listing.images.attached? %>
+                      <%= image_tag url_for(listing.images.first.variant(resize_to_limit: [50, 50])), 
+                            class: "img-thumbnail",
+                            data: { 
+                              bs_toggle: "popover",
+                              bs_trigger: "hover",
+                              bs_html: "true",
+                              bs_content: image_tag(url_for(listing.images.first.variant(resize_to_limit: [200, 200])))
+                            } %>
+                    <% elsif listing.primary_image_url %>
+                      <%= image_tag listing.primary_image_url, 
+                            class: "img-thumbnail",
+                            style: "max-width: 50px; max-height: 50px;" %>
+                    <% else %>
+                      <span class="text-muted">No image</span>
+                    <% end %>
+                  </td>
+                  <td><%= listing.title %></td>
+                  <td><%= number_to_currency(listing.sale_price) %></td>
+                  <td><%= listing.quantity %></td>
+                  <td>
+                    <span class="badge <%= listing.active? ? 'bg-success' : 'bg-secondary' %>">
+                      <%= listing.ebay_status&.titleize %>
+                    </span>
+                  </td>
+                  <td>
+                    <% if listing.last_sync_at %>
+                      <%= time_ago_in_words(listing.last_sync_at) %> ago
+                    <% else %>
+                      Never
+                    <% end %>
+                  </td>
+                  <td>
+                    <% if listing.kuralis_product %>
+                      <span class="badge bg-success">Migrated</span>
+                    <% else %>
+                      <span class="badge bg-warning">Not Migrated</span>
+                    <% end %>
+                  </td>
+                  <td>
+                    <%= link_to "View on eBay", 
+                        "https://www.ebay.com/itm/#{listing.ebay_item_id}", 
+                        target: "_blank",
+                        class: "btn btn-sm btn-outline-primary" %>
+                  </td>
+                  <td>
+                    <div class="dropdown">
+                      <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        Actions
+                      </button>
+                      <ul class="dropdown-menu dropdown-menu-end">
+                        <% if listing.active? %>
+                          <li>
+                            <%= button_to end_listing_ebay_listing_path(listing), 
+                                method: :post,
+                                class: "dropdown-item text-danger",
+                                data: { 
+                                  turbo: true,
+                                  turbo_confirm: "Are you sure you want to end this eBay listing? This action cannot be undone."
+                                } do %>
+                              <i class="bi bi-x-circle me-2"></i>End Listing
+                            <% end %>
+                          </li>
+                        <% end %>
+                        <% if listing.kuralis_product.blank? %>
+                          <li>
+                            <%= link_to "#", class: "dropdown-item" do %>
+                              <i class="bi bi-box me-2"></i>Create Product
+                            <% end %>
+                          </li>
+                        <% end %>
+                        <li>
+                          <%= link_to "#", class: "dropdown-item" do %>
+                            <i class="bi bi-arrow-repeat me-2"></i>Sync Details
+                          <% end %>
+                        </li>
+                      </ul>
+                    </div>
+                  </td>
+                </tr>
+              <% end %>
+            <% else %>
+              <tr>
+                <td colspan="9" class="text-center">No listings found</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center mt-3">
+        <div class="text-muted">
+          Showing <%= @listings.offset_value + 1 %> to <%= @listings.offset_value + @listings.length %> of <%= @listings.total_count %> listings
+        </div>
+        <div>
+          <%= paginate @listings, window: 2 %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+</div> 

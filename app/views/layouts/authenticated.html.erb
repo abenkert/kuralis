@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title><%= content_for(:title) || "Kuralis" %></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.5.0/font/bootstrap-icons.min.css">
+    
+    <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
+    <link rel="icon" href="/icon.png" type="image/png">
+    <link rel="apple-touch-icon" href="/icon.png">
+  
+    <%= javascript_importmap_tags %>
+  </head>
+
+  <body>
+    <div class="container-fluid">
+      <div class="row">
+        <!-- Sidebar -->
+        <nav id="sidebar" class="col-md-3 col-lg-2 d-md-block sidebar">
+          <div class="sidebar-header">
+            <%= link_to dashboard_path, class: "brand" do %>
+              <img src="/icon.png" alt="Kuralis Logo">
+              <span>Kuralis</span>
+            <% end %>
+          </div>
+
+          <div class="position-sticky pt-3">
+            <ul class="nav flex-column">
+              <li class="nav-item">
+                <%= link_to dashboard_path, class: "nav-link #{current_page?(dashboard_path) ? 'active' : ''}" do %>
+                  <i class="bi bi-house-door"></i> Dashboard
+                <% end %>
+              </li>
+
+              <li class="nav-item">
+                <%= link_to kuralis_products_path, class: "nav-link #{current_page?(kuralis_products_path) ? 'active' : ''}" do %>
+                  <i class="bi bi-box"></i> Products
+                <% end %>
+              </li>
+
+              <li class="nav-item">
+                <%= link_to kuralis_ai_product_analyses_path, class: "nav-link #{current_page?(kuralis_ai_product_analyses_path) ? 'active' : ''}" do %>
+                  <i class="bi bi-magic"></i> AI Creation
+                <% end %>
+              </li>
+              
+              <% if current_shop.shopify_ebay_account.present? %>
+                <li class="nav-item">
+                  <%= link_to ebay_listings_path, class: "nav-link #{current_page?(ebay_listings_path) ? 'active' : ''}" do %>
+                    <i class="bi bi-cart"></i> eBay Listings
+                  <% end %>
+                </li>
+              <% else %>
+                <li class="nav-item">
+                  <%= link_to "#", class: "nav-link disabled", 
+                      data: { 
+                        bs_toggle: "tooltip",
+                        bs_placement: "right",
+                        title: "Please connect your eBay account in Settings to access eBay listings"
+                      } do %>
+                    <i class="bi bi-cart"></i> eBay Listings
+                  <% end %>
+                </li>
+              <% end %>
+
+              <li class="nav-item">
+                <%= link_to shopify_products_path, class: "nav-link #{current_page?(shopify_products_path) ? 'active' : ''}" do %>
+                  <i class="bi bi-shop"></i> Shopify Products
+                <% end %>
+              </li>
+
+              <li class="nav-item">
+                <%= link_to orders_path, class: "nav-link #{current_page?(orders_path) ? 'active' : ''}" do %>
+                  <i class="bi bi-receipt"></i> Orders
+                <% end %>
+              </li>
+
+              <li class="nav-item">
+                <%= link_to job_status_index_path, class: "nav-link #{controller_name == 'job_status' ? 'active' : ''}" do %>
+                  <i class="bi bi-clock-history"></i> Job Status
+                <% end %>
+              </li>
+
+              <li class="nav-item">
+                <%= link_to settings_path, class: "nav-link #{current_page?(settings_path) ? 'active' : ''}" do %>
+                  <i class="bi bi-gear"></i> Settings
+                <% end %>
+              </li>
+            </ul>
+          </div>
+
+          <div class="sidebar-footer">
+            <div class="user-info">
+              <div class="avatar">
+                <%= current_shop.shopify_domain.first.upcase %>
+              </div>
+              <div class="user-details">
+                <div class="user-name"><%= current_shop.shopify_domain %></div>
+                <div class="user-role">Store Owner</div>
+              </div>
+            </div>
+          </div>
+        </nav>
+
+        <!-- Main content -->
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+          <% if flash[:notice] %>
+            <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+              <%= flash[:notice] %>
+              <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+          <% elsif flash[:alert] %>
+            <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+              <%= flash[:alert] %>
+              <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+          <% end %>
+          <%= yield %>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      // Initialize tooltips
+      document.addEventListener('DOMContentLoaded', function() {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+          return new bootstrap.Tooltip(tooltipTriggerEl)
+        })
+      });
+    </script>
+  </body>
+</html> 

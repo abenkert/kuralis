@@ -18,9 +18,13 @@ gem "turbo-rails"
 gem "stimulus-rails"
 # Build JSON APIs with ease [https://github.com/rails/jbuilder]
 gem "jbuilder"
+gem 'savon'
+gem 'mini_magick'
 
 gem 'shopify_app'
 gem 'dotenv-rails'
+gem 'httparty' # For making HTTP requests
+
 
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 # gem "bcrypt", "~> 3.1.7"
@@ -32,6 +36,7 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "solid_cache"
 gem "solid_queue"
 gem "solid_cable"
+gem 'devise'
 
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
@@ -41,9 +46,6 @@ gem "kamal", require: false
 
 # Add HTTP asset caching/compression and X-Sendfile acceleration to Puma [https://github.com/basecamp/thruster/]
 gem "thruster", require: false
-
-# Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
-# gem "image_processing", "~> 1.2"
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
@@ -66,3 +68,30 @@ group :test do
   gem "capybara"
   gem "selenium-webdriver"
 end
+
+gem 'bootstrap', '~> 5.3.0'
+gem 'sassc-rails'
+gem 'sidekiq'
+gem 'redis'
+gem 'cgi'
+gem 'nokogiri'
+
+# For AWS S3 storage
+gem 'aws-sdk-s3'
+# For image processing
+gem 'image_processing'
+# For downloading remote images
+gem 'down'
+
+# Pagination
+gem 'kaminari'
+
+
+gem "ruby-openai", "~> 7.4"
+
+# Add pgvector for vector similarity search (for eBay category embeddings)
+gem "pgvector", "~> 0.2.2"
+
+gem 'ruby-vips', '~> 2.1'  # Faster than mini_magick
+
+gem 'sidekiq-scheduler'

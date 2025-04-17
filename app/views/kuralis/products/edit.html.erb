@@ -1,0 +1,514 @@
+<div class="container-fluid">
+  <div class="row mb-4">
+    <div class="col">
+      <% if @product.draft? && params[:finalize] == 'true' %>
+        <h1 class="h3 mb-0 text-gray-800">Finalize Draft Product</h1>
+        <p class="text-muted">Review and finalize this product before making it active</p>
+        
+        <% if params[:sequence] == 'true' && session[:draft_finalize_remaining].present? && session[:draft_finalize_total].present? %>
+          <div class="alert alert-info mt-3">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <i class="fas fa-tasks me-2"></i>
+                Finalizing product <%= session[:draft_finalize_total] - session[:draft_finalize_remaining] + 1 %> of <%= session[:draft_finalize_total] %>
+              </div>
+              <div>
+                <div class="progress" style="width: 200px; height: 10px;">
+                  <div class="progress-bar" role="progressbar" 
+                       style="width: <%= ((session[:draft_finalize_total] - session[:draft_finalize_remaining]) / session[:draft_finalize_total].to_f) * 100 %>%;" 
+                       aria-valuenow="<%= ((session[:draft_finalize_total] - session[:draft_finalize_remaining]) / session[:draft_finalize_total].to_f) * 100 %>" 
+                       aria-valuemin="0" 
+                       aria-valuemax="100"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      <% else %>
+        <h1 class="h3 mb-0 text-gray-800">Edit Product</h1>
+        <p class="text-muted">Update product information in your Kuralis inventory</p>
+      <% end %>
+    </div>
+    <div class="col-auto">
+      <%= link_to "Back to Products", kuralis_products_path, class: "btn btn-outline-secondary" %>
+    </div>
+  </div>
+
+  <div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+      <h6 class="m-0 font-weight-bold text-primary">Product Details</h6>
+      <% if @product.draft? %>
+        <span class="badge bg-warning text-dark">Draft Product</span>
+      <% end %>
+    </div>
+    <div class="card-body">
+      <%= form_with(model: @product, url: kuralis_product_path(@product), method: :patch, local: true, class: "needs-validation", multipart: true) do |form| %>
+        <% if @product.draft? && params[:finalize] == 'true' %>
+          <%= hidden_field_tag :finalize, 'true' %>
+          <% if params[:sequence] == 'true' %>
+            <%= hidden_field_tag :sequence, 'true' %>
+          <% end %>
+        <% end %>
+        
+        <% if @product.errors.any? %>
+          <div class="alert alert-danger">
+            <h4><%= pluralize(@product.errors.count, "error") %> prohibited this product from being saved:</h4>
+            <ul>
+              <% @product.errors.full_messages.each do |message| %>
+                <li><%= message %></li>
+              <% end %>
+            </ul>
+          </div>
+        <% end %>
+
+        <!-- Nav tabs for product form sections -->
+        <ul class="nav nav-tabs mb-4" id="productFormTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic-info" type="button" role="tab" aria-controls="basic-info" aria-selected="true">Basic Info</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="ebay-tab" data-bs-toggle="tab" data-bs-target="#ebay-info" type="button" role="tab" aria-controls="ebay-info" aria-selected="false">eBay Listing</button>
+          </li>
+        </ul>
+
+        <!-- Tab content -->
+        <div class="tab-content" id="productFormTabContent">
+          <!-- Basic Info Tab -->
+          <div class="tab-pane fade show active" id="basic-info" role="tabpanel" aria-labelledby="basic-tab">
+            <div class="row mb-4">
+              <div class="col-md-12">
+                <div class="form-group">
+                  <label class="form-label fw-bold">Product Images</label>
+                  <%= render 'kuralis/products/image_upload', form: form, existing_images: @product.images %>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <%= form.label :title, class: "form-label" do %>
+                    Title <span class="text-danger">*</span>
+                  <% end %>
+                  <%= form.text_field :title, class: "form-control", required: true %>
+                  <div class="invalid-feedback">Title is required</div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <%= form.label :sku, "SKU", class: "form-label" %>
+                  <%= form.text_field :sku, class: "form-control" %>
+                  <small class="form-text text-muted">Unique identifier for your product</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-12">
+                <div class="form-group">
+                  <%= form.label :description, class: "form-label" do %>
+                    Description <span class="text-danger">*</span>
+                  <% end %>
+                  <%= form.text_area :description, class: "form-control", rows: 4, required: true %>
+                  <div class="invalid-feedback">Description is required</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-4">
+                <div class="form-group">
+                  <%= form.label :base_price, "Price", class: "form-label" do %>
+                    Price <span class="text-danger">*</span>
+                  <% end %>
+                  <div class="input-group">
+                    <span class="input-group-text">$</span>
+                    <%= form.number_field :base_price, class: "form-control", step: "0.01", min: "0", required: true %>
+                    <div class="invalid-feedback">Price is required</div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <%= form.label :base_quantity, "Quantity", class: "form-label" do %>
+                    Quantity <span class="text-danger">*</span>
+                  <% end %>
+                  <%= form.number_field :base_quantity, class: "form-control", min: "0", required: true %>
+                  <div class="invalid-feedback">Quantity is required</div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <%= form.label :weight_oz, "Weight (oz)", class: "form-label" do %>
+                    Weight (oz) <span class="text-danger">*</span>
+                  <% end %>
+                  <%= form.number_field :weight_oz, class: "form-control", step: "0.01", min: "0", required: true %>
+                  <div class="invalid-feedback">Weight is required</div>
+                  <small class="form-text text-muted">Weight in ounces</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-4">
+                <div class="form-group">
+                  <%= form.label :location, class: "form-label" %>
+                  <%= form.text_field :location, class: "form-control" %>
+                  <small class="form-text text-muted">Storage location (e.g., "Shelf A3")</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-12">
+                <div class="form-group">
+                  <%= form.label :tags, class: "form-label" %>
+                  <%= form.text_field :tags, value: @product.tags.join(', '), class: "form-control", placeholder: "Enter tags separated by commas" %>
+                  <small class="form-text text-muted">Tags help categorize your products (e.g., "electronics, vintage, sale")</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- eBay Listing Tab -->
+          <%= render 'kuralis/products/ebay_tab_content', form: form, product: @product %>
+
+          <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+          <%= link_to "Cancel", kuralis_products_path, class: "btn btn-outline-secondary me-md-2" %>
+          <% if @product.draft? && params[:finalize] == 'true' %>
+            <%= form.submit "Finalize Product", class: "btn btn-primary" %>
+          <% else %>
+            <%= form.submit "Update Product", class: "btn btn-primary me-md-2" %>
+            <% if !@product.listed_on_ebay? %>
+              <%= form.submit "Update and List on eBay", name: "list_on_ebay", id: "update-and-list-ebay", class: "btn btn-warning disabled" %>
+            <% end %>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Initialize form validation
+  document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('.needs-validation');
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('product_images');
+    const previewContainer = document.getElementById('imagePreviewContainer');
+    const ebayTab = document.getElementById('ebay-info');
+    
+    // Form validation
+    form.addEventListener('submit', function(event) {
+      let isValid = true;
+      
+      // Check if there are any images already attached or being uploaded
+      const hasExistingImages = document.querySelectorAll('.existing-image-preview:not([style*="display: none"])').length > 0;
+      const hasNewImages = fileInput.files.length > 0;
+      
+      if (!hasExistingImages && !hasNewImages) {
+        isValid = false;
+        // Create a validation message for images if it doesn't exist
+        let imageError = document.getElementById('image-validation-error');
+        if (!imageError) {
+          imageError = document.createElement('div');
+          imageError.id = 'image-validation-error';
+          imageError.className = 'alert alert-danger mt-2';
+          imageError.innerText = 'At least one product image is required';
+          dropzone.after(imageError);
+        }
+        dropzone.style.borderColor = '#dc3545';
+      } else {
+        // Remove error message if exists
+        const imageError = document.getElementById('image-validation-error');
+        if (imageError) imageError.remove();
+        dropzone.style.borderColor = '';
+      }
+      
+      // Get all fields marked with required attribute
+      const requiredFields = form.querySelectorAll('[required]');
+      requiredFields.forEach(field => {
+        if (!field.value.trim()) {
+          isValid = false;
+          field.classList.add('is-invalid');
+          
+          // Ensure parent tab is visible if validation fails
+          const tabPane = field.closest('.tab-pane');
+          if (tabPane && !tabPane.classList.contains('show')) {
+            // Get the tab ID
+            const tabId = tabPane.id;
+            // Find the corresponding tab button and click it
+            document.querySelector(`[data-bs-target="#${tabId}"]`).click();
+          }
+        } else {
+          field.classList.remove('is-invalid');
+        }
+      });
+      
+      // Add a flag to check if user wants to list on eBay now
+      // For edit form we won't validate eBay fields unless there's a specific button for it
+      let listOnEbayNow = false;
+      
+      // If there's a "Update and List on eBay" button, check if it was clicked
+      if (event.submitter && event.submitter.id === 'update-and-list-ebay') {
+        listOnEbayNow = true;
+      }
+      
+      // Only check eBay fields if user explicitly wants to list on eBay immediately
+      if (listOnEbayNow) {
+        // Check eBay required fields, which are marked with an asterisk but not the required attribute
+        // Find all fields in eBay tab with asterisk in label
+        const ebayFields = ebayTab.querySelectorAll('.form-group label span.text-danger');
+        ebayFields.forEach(asterisk => {
+          // Get the associated input field
+          const label = asterisk.closest('label');
+          const forAttr = label.getAttribute('for');
+          const field = document.getElementById(forAttr) || 
+                       label.closest('.form-group').querySelector('input, select, textarea');
+          
+          if (field && !field.value.trim()) {
+            isValid = false;
+            field.classList.add('is-invalid');
+            
+            // Make sure the eBay tab is visible
+            if (!ebayTab.classList.contains('show')) {
+              document.querySelector('[data-bs-target="#ebay-info"]').click();
+            }
+          } else if (field) {
+            field.classList.remove('is-invalid');
+          }
+        });
+      }
+      
+      if (!isValid) {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        // Show alert at top of form
+        let formAlert = document.getElementById('form-validation-alert');
+        if (!formAlert) {
+          formAlert = document.createElement('div');
+          formAlert.id = 'form-validation-alert';
+          formAlert.className = 'alert alert-danger mb-4';
+          
+          // Check if errors are in eBay tab
+          const ebayTabErrors = ebayTab.querySelectorAll('.is-invalid').length > 0;
+          
+          let alertText = 'Please fill in all required fields marked with *';
+          if (ebayTabErrors && listOnEbayNow) {
+            alertText += '. Some required fields on the eBay Listing tab need attention for eBay listing.';
+          }
+          
+          formAlert.innerText = alertText;
+          form.prepend(formAlert);
+        }
+        
+        // Scroll to the first invalid field
+        const firstInvalid = form.querySelector('.is-invalid');
+        if (firstInvalid) {
+          firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else {
+        // Remove the alert if form is valid
+        const formAlert = document.getElementById('form-validation-alert');
+        if (formAlert) formAlert.remove();
+      }
+      
+      form.classList.add('was-validated');
+    }, false);
+    
+    // Convert comma-separated tags input to array
+    const tagsInput = document.querySelector('input[name="kuralis_product[tags]"]');
+    if (tagsInput) {
+      form.addEventListener('submit', function() {
+        const tagsValue = tagsInput.value;
+        if (tagsValue) {
+          // This will be processed by strong parameters in the controller
+          tagsInput.value = tagsValue.split(',').map(tag => tag.trim());
+        }
+      });
+    }
+    
+    // Image upload functionality
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, preventDefaults, false);
+      document.body.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    // Highlight drop area when item is dragged over it
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, unhighlight, false);
+    });
+    
+    // Handle dropped files
+    dropzone.addEventListener('drop', handleDrop, false);
+    
+    // Handle file input change
+    fileInput.addEventListener('change', handleFiles, false);
+    
+    // Handle remove buttons for existing images
+    const removeButtons = document.querySelectorAll('.image-preview-remove');
+    removeButtons.forEach(button => {
+      button.addEventListener('click', function() {
+        const imageId = this.getAttribute('data-id');
+        // Add hidden field to mark this image for deletion
+        const hiddenField = document.createElement('input');
+        hiddenField.type = 'hidden';
+        hiddenField.name = 'kuralis_product[images_to_delete][]';
+        hiddenField.value = imageId;
+        form.appendChild(hiddenField);
+        
+        // Hide the image preview
+        const previewItem = this.closest('.image-preview-item');
+        if (previewItem) {
+          previewItem.style.display = 'none';
+        }
+      });
+    });
+    
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    function highlight() {
+      dropzone.classList.add('dropzone-active');
+    }
+    
+    function unhighlight() {
+      dropzone.classList.remove('dropzone-active');
+    }
+    
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      
+      handleFiles({ target: { files: files } });
+    }
+    
+    function handleFiles(e) {
+      const files = [...e.target.files];
+      
+      files.forEach(previewFile);
+    }
+    
+    function previewFile(file) {
+      if (!file.type.match('image.*')) return;
+      
+      const reader = new FileReader();
+      
+      reader.onload = function(e) {
+        const preview = document.createElement('div');
+        preview.className = 'image-preview-item';
+        
+        const img = document.createElement('img');
+        img.src = e.target.result;
+        img.className = 'img-fluid';
+        
+        const removeBtn = document.createElement('div');
+        removeBtn.className = 'image-preview-remove';
+        removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+        removeBtn.addEventListener('click', function() {
+          preview.remove();
+        });
+        
+        preview.appendChild(img);
+        preview.appendChild(removeBtn);
+        previewContainer.appendChild(preview);
+      }
+      
+      reader.readAsDataURL(file);
+    }
+  });
+</script>
+
+<style>
+  .image-upload-container {
+    width: 100%;
+  }
+  
+  .dropzone-container {
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+    transition: all 0.3s ease;
+  }
+  
+  .dropzone-container:hover, .dropzone-active {
+    border-color: #4e73df;
+    background-color: #f0f4ff;
+  }
+  
+  .image-preview-container {
+    gap: 10px;
+  }
+  
+  .image-preview-item {
+    position: relative;
+    width: 150px;
+    height: 150px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  }
+  
+  .image-preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  .image-preview-remove {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: rgba(255,255,255,0.8);
+    border-radius: 50%;
+    width: 25px;
+    height: 25px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #e74a3b;
+    font-size: 14px;
+  }
+  
+  .image-preview-remove:hover {
+    background: rgba(255,255,255,1);
+  }
+
+  /* Item Specifics Styles */
+  .item-specifics-container {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+  }
+
+  .item-specifics-container .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .item-specifics-container .form-label {
+    font-weight: 500;
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+  }
+
+  .item-specifics-container .form-control {
+    border: 1px solid #e3e6f0;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .item-specifics-container .form-control:focus {
+    border-color: #4e73df;
+    box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.25);
+  }
+</style> 

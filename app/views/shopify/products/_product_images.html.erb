@@ -1,0 +1,7 @@
+<div class="d-flex gap-2" style="max-width: 200px;">
+  <% product.images.each do |image| %>
+    <%= image_tag image, 
+                  class: "img-thumbnail", 
+                  style: "max-width: 50px; max-height: 50px;" %>
+  <% end %>
+</div> 

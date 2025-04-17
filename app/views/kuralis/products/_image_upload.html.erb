@@ -1,0 +1,117 @@
+<%# Image Upload Component %>
+<div class="image-upload" data-controller="dropzone" data-dropzone-max-files-value="10" data-dropzone-max-size-value="5242880">
+  <div class="card">
+    <div class="card-body">
+      <%# Hidden file input %>
+      <%= form.file_field :images, multiple: true, class: "d-none", accept: "image/*", 
+          data: { dropzone_target: "input", action: "change->dropzone#handleFileSelect" } %>
+
+      <%# All Images Section (both existing and new) %>
+      <div>
+        <h6 class="mb-3">Product Images</h6>
+        
+        <%# Images Preview Area %>
+        <div class="d-flex flex-wrap gap-3" id="imagePreviewContainer">
+          <%# Existing Images %>
+          <% if local_assigns[:existing_images] && existing_images.attached? %>
+            <% existing_images.each do |image| %>
+              <div class="image-preview-item" data-image-id="<%= image.id %>">
+                <div class="position-relative">
+                  <%= image_tag image, class: "img-fluid rounded shadow-sm", style: "width: 150px; height: 150px; object-fit: cover;" %>
+                  <button type="button" class="btn-close position-absolute top-0 end-0 m-2 bg-white rounded-circle shadow-sm" 
+                          aria-label="Remove image" data-action="click->dropzone#removeExistingFile"></button>
+                </div>
+                <div class="small text-muted mt-2">
+                  <div class="text-truncate"><%= image.filename %></div>
+                  <div class="opacity-75"><%= number_to_human_size(image.byte_size) %></div>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+
+          <%# Preview Area for Newly Added Images %>
+          <div data-dropzone-target="preview" class="d-contents"></div>
+        </div>
+
+        <%# Dropzone Area %>
+        <div class="dropzone-area p-5 text-center border rounded bg-light mt-3"
+             data-action="dragenter->dropzone#dragEnter dragover->dropzone#dragOver dragleave->dropzone#dragLeave drop->dropzone#handleDrop">
+          <i class="fas fa-cloud-upload-alt fa-3x mb-3 text-muted"></i>
+          <p class="mb-1">Drag and drop images here</p>
+          <p class="text-muted small mb-3">or</p>
+          <button type="button" class="btn btn-outline-primary" data-action="click->dropzone#browse">
+            Browse Files
+          </button>
+          <p class="text-muted small mt-2">
+            Upload up to 10 images (max 5MB each)
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <%# Template for file previews %>
+  <template data-dropzone-target="template">
+    <div class="image-preview-item" style="width: 150px;">
+      <div class="position-relative bg-light rounded" style="width: 150px; height: 150px;">
+        <img src="" alt="" class="img-fluid rounded shadow-sm" 
+             style="width: 150px; height: 150px; object-fit: cover; transition: opacity 0.3s ease;">
+        <button type="button" class="btn-close position-absolute top-0 end-0 m-2 bg-white rounded-circle shadow-sm" 
+                aria-label="Remove image" data-action="click->dropzone#removeFile"></button>
+      </div>
+      <div class="small text-muted mt-2">
+        <div class="text-truncate file-name"></div>
+        <div class="file-size opacity-75"></div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<style>
+.dropzone-area {
+  border: 2px dashed #dee2e6;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.dropzone-area:hover,
+.dropzone-area.dropzone-active {
+  border-color: var(--bs-primary);
+  background-color: var(--bs-light);
+}
+
+.image-preview-item {
+  transition: all 0.3s ease;
+}
+
+.image-preview-item:hover {
+  transform: translateY(-2px);
+}
+
+.btn-close {
+  opacity: 0.8;
+  transition: opacity 0.3s ease;
+  z-index: 2;
+}
+
+.btn-close:hover {
+  opacity: 1;
+}
+
+/* Allow d-contents for proper flex layout */
+.d-contents {
+  display: contents;
+}
+
+/* Prevent text selection in dropzone */
+.dropzone-area * {
+  user-select: none;
+}
+
+/* Loading spinner styles */
+.spinner-border {
+  --bs-spinner-width: 1.5rem;
+  --bs-spinner-height: 1.5rem;
+  --bs-spinner-border-width: 0.15em;
+}
+</style> 

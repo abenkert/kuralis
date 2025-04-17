@@ -1,0 +1,2 @@
+module Kuralis::EbayCategoriesHelper
+end

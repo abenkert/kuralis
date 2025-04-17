@@ -1,0 +1,261 @@
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Kuralis Products</h1>
+    
+    <div class="btn-group">
+      <%= link_to "All", kuralis_products_path(filter: 'all'), 
+          class: "btn #{@filter == 'all' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+      <%= link_to "Unlisted", kuralis_products_path(filter: 'unlisted'), 
+          class: "btn #{@filter == 'unlisted' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+      <%= link_to "On Shopify", kuralis_products_path(filter: 'shopify'), 
+          class: "btn #{@filter == 'shopify' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+      <%= link_to "On eBay", kuralis_products_path(filter: 'ebay'), 
+          class: "btn #{@filter == 'ebay' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+      <%= link_to "Drafts", kuralis_products_path(filter: 'draft'), 
+          class: "btn #{@filter == 'draft' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+    </div>
+
+    <div class="dropdown">
+      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-plus-circle me-1"></i>Actions
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li>
+          <%= link_to new_kuralis_product_path, class: "dropdown-item" do %>
+            <i class="bi bi-plus-circle me-2"></i>Create New Product
+          <% end %>
+        </li>
+        <li>
+          <%= link_to kuralis_ai_product_analyses_path, class: "dropdown-item" do %>
+            <i class="bi bi-magic me-2"></i>AI Product Creation
+          <% end %>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <%= link_to kuralis_bulk_listings_path(platform: 'shopify'), class: "dropdown-item" do %>
+            <i class="bi bi-shop me-2"></i>Bulk List to Shopify
+      <% end %>
+        </li>
+        <li>
+          <%= link_to kuralis_bulk_listings_path(platform: 'ebay'), class: "dropdown-item" do %>
+            <i class="bi bi-tags me-2"></i>Bulk List to eBay
+      <% end %>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="form-check">
+            <%= check_box_tag 'select_all', '1', false, 
+                class: 'form-check-input', 
+                id: 'select-all',
+                data: { 
+                  "bulk-actions-target": "checkbox",
+                  action: "bulk-actions#toggleAll"
+                } %>
+            <label class="form-check-label" for="select-all">Select All</label>
+          </div>
+          
+          <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle" 
+                    type="button" 
+                    data-bs-toggle="dropdown" 
+                    disabled 
+                    data-bulk-actions-target="bulkActionsButton">
+              <i class="bi bi-gear me-1"></i>Bulk Actions
+            </button>
+            <ul class="dropdown-menu">
+              <li>
+                <%= button_tag type: 'submit', name: 'action', value: 'list_shopify', 
+                    class: 'dropdown-item', data: { confirm: 'List selected products on Shopify?' } do %>
+                  <i class="bi bi-shop me-2"></i>List on Shopify
+                <% end %>
+              </li>
+              <li>
+                <%= button_tag type: 'submit', name: 'action', value: 'list_ebay', 
+                    class: 'dropdown-item', data: { confirm: 'List selected products on eBay?' } do %>
+                  <i class="bi bi-tags me-2"></i>List on eBay
+                <% end %>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-hover">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Image</th>
+                <th>Title</th>
+                <th>SKU</th>
+                <th>Base Price</th>
+                <th>Location</th>
+                <th>Source</th>
+                <% if @filter == 'draft' %>
+                  <th>Status</th>
+                <% else %>
+                  <th>Shopify Status</th>
+                  <th>eBay Status</th>
+                <% end %>
+                <th>Last Synced</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% @products.each do |product| %>
+                <tr id="<%= dom_id(product) %>">
+                  <td>
+                    <%= check_box_tag "product_ids[]", product.id, false, 
+                        class: 'form-check-input product-checkbox',
+                        data: {
+                          "bulk-listing-target": "checkbox",
+                          action: "bulk-listing#toggleSelection"
+                        },
+                        disabled: (product.draft? || (product.shopify_product.present? && product.ebay_listing.present?)) %>
+                  </td>
+                  <td>
+                    <% if product.images.attached? %>
+                      <%= image_tag product.images.first.variant(
+                        resize_to_limit: [50, 50],
+                        format: :webp,
+                        saver: { quality: 80, strip: true }
+                      ), class: "img-thumbnail" %>
+                    <% else %>
+                      <%= image_tag "placeholder.png",
+                          class: "img-thumbnail",
+                          style: "max-width: 50px; max-height: 50px;" %>
+                    <% end %>
+                  </td>
+                  <td>
+                    <%= product.title %>
+                    <% if product.draft? %>
+                      <span class="badge bg-warning text-dark">Draft</span>
+                    <% end %>
+                  </td>
+                  <td><%= product.sku %></td>
+                  <td><%= number_to_currency(product.base_price) %></td>
+                  <td><%= product.location %></td>
+                  <td>
+                    <span class="badge <%= product.source_platform == 'ai' ? 'bg-info' : 'bg-secondary' %>">
+                      <%= product.source_platform&.titleize %>
+                    </span>
+                  </td>
+                  
+                  <% if @filter == 'draft' %>
+                    <td>
+                      <span class="badge bg-warning text-dark">Draft</span>
+                    </td>
+                  <% else %>
+                    <td>
+                      <% @collector.active_on_shopify?(product) do %>
+                        <span class="badge bg-success d-inline-flex align-items-center">
+                          <i class="bi bi-shop me-1"></i>
+                          Listed
+                          (<%= number_to_currency(product.shopify_product.price) %>)
+                        </span>
+                      <% end %>
+                      <% @collector.not_active_on_shopify?(product) do %>
+                        <span class="badge bg-secondary d-inline-flex align-items-center">
+                          <i class="bi bi-dash-circle me-1"></i>
+                          Unlisted
+                        </span>
+                      <% end %>
+                    </td>
+                    <td>
+                      <% @collector.active_on_ebay?(product) do %>
+                        <span class="badge bg-warning text-dark d-inline-flex align-items-center">
+                          <i class="bi bi-tags me-1"></i>
+                          Listed
+                          (<%= number_to_currency(product.ebay_listing.sale_price) %>)
+                        </span>
+                      <% end %>
+                      <% @collector.not_active_on_ebay?(product) do %>
+                        <span class="badge bg-secondary d-inline-flex align-items-center">
+                          <i class="bi bi-dash-circle me-1"></i>
+                          Unlisted
+                        </span>
+                      <% end %>
+                    </td>
+                  <% end %>
+                  <td>
+                    <%= time_ago_in_words(product.last_synced_at) if product.last_synced_at %> ago
+                  </td>
+                  <td>
+                    <div class="dropdown">
+                      <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        Actions
+                      </button>
+                      <ul class="dropdown-menu">
+                        <% if product.draft? %>
+                          <li>
+                            <%= link_to edit_kuralis_product_path(product, finalize: true), class: "dropdown-item" do %>
+                              <i class="bi bi-check-circle me-2"></i>Edit & Finalize
+                            <% end %>
+                          </li>
+                        <% else %>
+                          <% unless product.shopify_product %>
+                            <li>
+                                <%= link_to kuralis_listings_path(product_id: product.id, platforms: ['shopify']),
+                                  method: :post,
+                                  class: "dropdown-item",
+                                  data: { turbo_method: :post, turbo_confirm: 'List this product on Shopify?' } do %>
+                                <i class="bi bi-shop me-2"></i>List on Shopify
+                              <% end %>
+                            </li>
+                          <% end %>
+                          <% unless product.ebay_listing %>
+                            <li>
+                              <%= link_to kuralis_listings_path(product_id: product.id, platforms: ['ebay']),
+                                  method: :post,
+                                  class: "dropdown-item",
+                                  data: { turbo_method: :post, turbo_confirm: 'List this product on eBay?' } do %>
+                                <i class="bi bi-tags me-2"></i>List on eBay
+                              <% end %>
+                            </li>
+                          <% end %>
+                          <li>
+                            <%= link_to edit_kuralis_product_path(product), class: "dropdown-item" do %>
+                              <i class="bi bi-pencil me-2"></i>Edit
+                            <% end %>
+                          </li>
+                        <% end %>
+                        <li>
+                          <%= button_to kuralis_product_path(product.id), 
+                              method: :delete,
+                              class: "dropdown-item text-danger",
+                              data: { turbo_method: :delete, turbo_confirm: "Are you sure you want to delete this product?" } do %>
+                            <i class="bi bi-trash me-2"></i>Delete
+                          <% end %>
+                        </li>
+                      </ul>
+                    </div>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mt-3">
+          <div class="text-muted">
+            Showing <%= @products.offset_value + 1 %> to <%= @products.offset_value + @products.length %> of <%= @products.total_count %> products
+          </div>
+          <div>
+            <%= paginate @products %>
+          </div>
+        </div>
+      </div>
+    </div>
+
+</div>
+
+<%= javascript_tag do %>
+  document.getElementById('select-all').addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.product-checkbox:not(:disabled)');
+    checkboxes.forEach(checkbox => checkbox.checked = this.checked);
+  });
+<% end %> 

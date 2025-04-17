@@ -1,0 +1,97 @@
+<%= turbo_frame_tag warehouse do %>
+  <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-40"></div>
+
+  <div class="fixed inset-0 z-50 overflow-y-auto">
+    <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+      <div class="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+        <%= form_with(model: warehouse, data: { turbo: true }) do |f| %>
+          <% if warehouse.errors.any? %>
+            <div class="alert alert-danger">
+              <h6 class="alert-heading">
+                <%= pluralize(warehouse.errors.count, "error") %> prohibited this warehouse from being saved:
+              </h6>
+              <ul class="mb-0">
+                <% warehouse.errors.each do |error| %>
+                  <li><%= error.full_message %></li>
+                <% end %>
+              </ul>
+            </div>
+          <% end %>
+
+          <div>
+            <h3 class="text-lg font-medium leading-6 text-gray-900">
+              <%= warehouse.persisted? ? "Edit Warehouse" : "New Warehouse" %>
+            </h3>
+          </div>
+
+          <div class="space-y-4">
+            <div class="mb-3">
+              <%= f.label :name, class: "form-label" %>
+              <%= f.text_field :name, class: "form-control", placeholder: "Warehouse name (e.g. Main Warehouse)" %>
+            </div>
+
+            <div class="mb-3">
+              <%= f.label :address1, "Address Line 1", class: "form-label" %>
+              <%= f.text_field :address1, class: "form-control", placeholder: "Street address" %>
+            </div>
+
+            <div class="mb-3">
+              <%= f.label :address2, "Address Line 2", class: "form-label" %>
+              <%= f.text_field :address2, class: "form-control", placeholder: "Apt, suite, unit, etc. (optional)" %>
+            </div>
+
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <%= f.label :city, class: "form-label" %>
+                <%= f.text_field :city, class: "form-control" %>
+              </div>
+              <div class="col-md-6">
+                <%= f.label :state, class: "form-label" %>
+                <%= f.text_field :state, class: "form-control" %>
+              </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <%= f.label :postal_code, class: "form-label required" %>
+                <%= f.text_field :postal_code, class: "form-control", required: true %>
+              </div>
+              <div class="col-md-6">
+                <%= f.label :country_code, class: "form-label required" %>
+                <%= f.select :country_code, 
+                      options_for_select([['United States', 'US'], ['Canada', 'CA']], warehouse.country_code || 'US'),
+                      {}, 
+                      { class: "form-select", required: true } %>
+              </div>
+            </div>
+
+            <div class="form-check mb-2">
+              <%= f.check_box :is_default, class: "form-check-input" %>
+              <%= f.label :is_default, "Set as default warehouse", class: "form-check-label" %>
+              <div class="form-text">Default warehouse will be used for products without a specific shipping location</div>
+            </div>
+
+            <div class="form-check mb-3">
+              <%= f.check_box :active, class: "form-check-input" %>
+              <%= f.label :active, "Active", class: "form-check-label" %>
+              <div class="form-text">Inactive warehouses won't be used for shipping</div>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2 mt-4">
+            <%= link_to "Cancel", "#", class: "btn btn-outline-secondary", onclick: "document.querySelector('#modal_content').innerHTML = ''; return false;" %>
+            <%= f.submit warehouse.persisted? ? "Update Warehouse" : "Create Warehouse", class: "btn btn-primary" %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<style>
+  .required:after {
+    content: "*";
+    color: red;
+    margin-left: 3px;
+  }
+</style> 

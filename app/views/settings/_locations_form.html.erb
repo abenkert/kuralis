@@ -1,0 +1,57 @@
+<%= turbo_frame_tag "locations_form" do %>
+  <%= form_with(model: @shop, 
+                url: update_default_location_settings_path, 
+                method: :patch, 
+                data: { controller: "form-submit" }) do |f| %>
+    <div class="row align-items-end">
+      <div class="col-md-6">
+        <div class="form-group">
+
+          <%= f.select :default_location_id,
+              @shop.locations.map { |id, location| [location["name"], id] },
+              { include_blank: "Select a default location" },
+              class: "form-select",
+              data: { action: "change->form-submit#submit" } %>
+          <small class="form-text text-muted">
+            This location will be used as the default for inventory management
+          </small>
+        </div>
+      </div>
+    </div>
+  <% end %>
+  
+  <% if @shop.locations.present? %>
+    <div class="table-responsive mt-4">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Location Name</th>
+            <th>Address</th>
+            <th>Default</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @shop.locations.each do |id, location| %>
+            <tr>
+              <td><%= location["name"] %></td>
+              <td><%= location["address1"] %></td>
+              <td>
+                <% if id == @shop.default_location_id %>
+                  <span class="badge bg-success">Default</span>
+                <% else %>
+                  <span class="badge bg-secondary">No</span>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <div class="text-center py-3">
+      <p class="text-muted mb-0">
+        No Shopify locations found. Please ensure your Shopify store has locations configured.
+      </p>
+    </div>
+  <% end %>
+<% end %> 

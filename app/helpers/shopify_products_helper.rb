@@ -1,0 +1,2 @@
+module ShopifyProductsHelper
+end

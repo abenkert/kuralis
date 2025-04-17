@@ -1,0 +1,23 @@
+<%= turbo_frame_tag "shopify_settings_form" do %>
+  <%= form_with url: kuralis_settings_path, method: :patch, class: "settings-form", id: "shopify_settings_form" do |f| %>
+    <div class="mb-3">
+      <h5>Product End Behavior</h5>
+      <div class="form-check mb-2">
+        <%= f.check_box "settings[shopify][archive_products]",
+              checked: @shop.shopify_archive_products?,
+              class: "form-check-input" %>
+        <label class="form-check-label">
+          Archive Products (instead of Deleting)
+        </label>
+        <div class="form-text">
+          When enabled, products will be archived in Shopify rather than deleted. 
+          Archived products can be restored later. If disabled, products will be permanently deleted.
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <%= f.submit "Save Settings", class: "btn btn-primary" %>
+    </div>
+  <% end %>
+<% end %> 

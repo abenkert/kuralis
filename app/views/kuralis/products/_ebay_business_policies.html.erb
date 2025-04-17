@@ -1,0 +1,81 @@
+<div class="row mb-3">
+  <div class="col-md-4">
+    <div class="form-group">
+      <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
+        <%= ebay_fields.label :shipping_profile_id, "Shipping Policy", class: "form-label" do %>
+          Shipping Policy <span class="text-danger">*</span>
+        <% end %>
+        <%= ebay_fields.select :shipping_profile_id, 
+            options_for_select(
+              current_shop.shopify_ebay_account&.shipping_profiles&.map { |p| 
+                [p["name"], p["id"]] 
+              } || [],
+              product.ebay_product_attribute&.shipping_profile_id || KuralisShopSetting.get_setting(current_shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_shipping_policy')
+            ),
+            { include_blank: "Select Shipping Policy" }, 
+            { class: "form-select" } 
+        %>
+        <div class="invalid-feedback">Shipping policy is required for listing on eBay</div>
+      <% end %>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="form-group">
+      <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
+        <%= ebay_fields.label :return_profile_id, "Return Policy", class: "form-label" do %>
+          Return Policy <span class="text-danger">*</span>
+        <% end %>
+        <%= ebay_fields.select :return_profile_id, 
+            options_for_select(
+              current_shop.shopify_ebay_account&.return_profiles&.map { |p| 
+                [p["profile_name"], p["profile_id"]] 
+              } || [],
+              product.ebay_product_attribute&.return_profile_id || KuralisShopSetting.get_setting(current_shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_return_policy')
+            ),
+            { include_blank: "Select Return Policy" }, 
+            { class: "form-select" } 
+        %>
+        <div class="invalid-feedback">Return policy is required for listing on eBay</div>
+      <% end %>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="form-group">
+      <%= form.fields_for :ebay_product_attribute do |ebay_fields| %>
+        <%= ebay_fields.label :payment_profile_id, "Payment Policy", class: "form-label" do %>
+          Payment Policy <span class="text-danger">*</span>
+        <% end %>
+        <%= ebay_fields.select :payment_profile_id, 
+            options_for_select(
+              current_shop.shopify_ebay_account&.payment_profiles&.map { |p| 
+                [p["profile_name"], p["profile_id"]] 
+              } || [],
+              product.ebay_product_attribute&.payment_profile_id || KuralisShopSetting.get_setting(current_shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_payment_policy')
+            ),
+            { include_blank: "Select Payment Policy" }, 
+            { class: "form-select" } 
+        %>
+        <div class="invalid-feedback">Payment policy is required for listing on eBay</div>
+      <% end %>
+    </div>
+  </div>
+</div>
+
+<div class="row mb-3">
+  <div class="col-md-6">
+    <div class="form-group">
+      <%= form.label :warehouse_id, "Shipping Location", class: "form-label" %>
+      <%= form.select :warehouse_id, 
+          options_for_select(
+            current_shop.warehouses.map { |w| 
+              ["#{w.name}#{w.is_default? ? ' (Default)' : ''}", w.id] 
+            },
+            product.warehouse_id || current_shop.warehouses.find_by(is_default: true)&.id
+          ),
+          { include_blank: "Select Warehouse" }, 
+          { class: "form-select" } 
+      %>
+      <small class="form-text text-muted">Select the physical location this item will be shipped from</small>
+    </div>
+  </div>
+</div> 

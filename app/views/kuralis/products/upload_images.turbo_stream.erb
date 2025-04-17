@@ -1,0 +1,10 @@
+<%= turbo_stream.replace "ai_analyses" do %>
+  <%= render partial: "kuralis/products/ai_analyses", locals: { analyses: @analyses } %>
+<% end %>
+
+<%= turbo_stream.append "flash_messages" do %>
+  <div class="alert alert-success alert-dismissible fade show" role="alert">
+    <strong>Success!</strong> Images uploaded and queued for AI analysis.
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+<% end %> 

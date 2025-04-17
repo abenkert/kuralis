@@ -1,0 +1,68 @@
+<div class="col-md-6 mb-4" id="analysis_<%= analysis.id %>">
+  <div class="analysis-item position-relative">
+    <% if analysis.image_attachment.attached? %>
+      <%= image_tag url_for(analysis.image_attachment), class: "analysis-image" %>
+    <% else %>
+      <div class="analysis-image bg-light d-flex align-items-center justify-content-center">
+        <i class="fas fa-image fa-3x text-muted"></i>
+      </div>
+    <% end %>
+    <div class="analysis-status status-<%= analysis.status %>">
+      <%= analysis.status_message %>
+    </div>
+    <div class="p-3">
+      <h6 class="mb-2 font-weight-bold">
+        <% if analysis.completed? %>
+          <%= analysis.suggested_title.presence || "Untitled Product" %>
+        <% else %>
+          <span class="placeholder-glow">
+            <span class="placeholder col-7"></span>
+          </span>
+        <% end %>
+      </h6>
+      <div class="small text-muted mb-3" style="min-height: 60px;">
+        <% if analysis.completed? %>
+          <%= truncate(analysis.suggested_description.presence || "No description available", length: 100) %>
+        <% elsif analysis.processing? %>
+          <div class="d-flex align-items-center">
+            <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <span>AI is analyzing this image...</span>
+          </div>
+        <% else %>
+          <span class="placeholder-glow">
+            <span class="placeholder col-10"></span>
+            <span class="placeholder col-8"></span>
+            <span class="placeholder col-9"></span>
+          </span>
+        <% end %>
+      </div>
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <% if analysis.completed? %>
+            <span class="badge bg-info me-1"><%= analysis.suggested_brand %></span>
+            <% if analysis.suggested_price.present? %>
+              <span class="badge bg-success"><%= number_to_currency(analysis.suggested_price) %></span>
+            <% end %>
+          <% end %>
+        </div>
+        <div class="d-flex">
+          <% if analysis.completed? %>
+            <%= link_to kuralis_draft_products_path(analysis_id: analysis.id), 
+                class: "btn btn-sm btn-primary", 
+                data: { turbo_method: :post } do %>
+              <i class="fas fa-plus me-1"></i> Create Draft
+            <% end %>
+          <% end %>
+          <%= link_to kuralis_ai_product_analyses_path(analysis_id: analysis.id), 
+              method: :delete, 
+              class: "btn btn-sm btn-outline-danger ms-2", 
+              data: { turbo_method: :delete, turbo_confirm: "Are you sure you want to remove this image?" } do %>
+            <i class="fas fa-trash"></i>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div> 

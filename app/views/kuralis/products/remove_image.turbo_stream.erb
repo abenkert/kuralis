@@ -1,0 +1,10 @@
+<%= turbo_stream.update "ai_analyses" do %>
+  <%= render partial: "kuralis/products/ai_analyses", locals: { analyses: @analyses } %>
+<% end %>
+
+<%= turbo_stream.append "flash_messages" do %>
+  <div class="alert alert-info alert-dismissible fade show" role="alert">
+    Image removed successfully.
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+<% end %> 

@@ -1,4 +1,8 @@
 class ApplicationJob < ActiveJob::Base
+  include JobTrackable
+  
+  queue_as :default
+
   # Automatically retry jobs that encountered a deadlock
   # retry_on ActiveRecord::Deadlocked
 

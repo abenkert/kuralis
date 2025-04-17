@@ -1,0 +1,88 @@
+<div class="settings-section mb-4">
+  <div class="settings-header">
+    <h3 class="border-bottom pb-2">
+      <i class="bi bi-gear me-2"></i>Kuralis Settings
+    </h3>
+  </div>
+
+  <div class="accordion">
+    <!-- General Settings -->
+    <div class="accordion-item">
+      <h2 class="accordion-header">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#generalSettings">
+          General Settings
+        </button>
+      </h2>
+      
+      <div id="generalSettings" class="accordion-collapse collapse">
+        <div class="accordion-body">
+          <%= turbo_frame_tag "settings_form" do %>
+            <%= render "kuralis/settings/form" %>
+          <% end %>
+        </div>
+      </div>
+    </div>
+
+    <!-- Warehouses -->
+    <div class="accordion-item">
+      <h2 class="accordion-header">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#warehouseSettings">
+          Warehouses
+        </button>
+      </h2>
+      
+      <div id="warehouseSettings" class="accordion-collapse collapse">
+        <div class="accordion-body">
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <h5 class="mb-0">Manage Warehouses</h5>
+            <%= link_to new_warehouse_path, class: "btn btn-primary btn-sm" do %>
+              <i class="bi bi-plus-lg me-1"></i>Add Warehouse
+            <% end %>
+          </div>
+
+          <% if @warehouses.any? %>
+            <div class="table-responsive">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Default</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% @warehouses.each do |warehouse| %>
+                    <tr>
+                      <td><%= warehouse.name %></td>
+                      <td>
+                        <% if warehouse.is_default? %>
+                          <span class="badge bg-success">Default</span>
+                        <% end %>
+                      </td>
+                      <td>
+                        <%= link_to edit_warehouse_path(warehouse), class: "btn btn-sm btn-outline-primary me-2" do %>
+                          <i class="bi bi-pencil"></i>
+                        <% end %>
+                        <%= button_to warehouse_path(warehouse),
+                              method: :delete,
+                              class: "btn btn-sm btn-outline-danger",
+                              form: { style: "display: inline-block" },
+                              data: { turbo_confirm: "Are you sure?" } do %>
+                          <i class="bi bi-trash"></i>
+                        <% end %>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          <% else %>
+            <div class="text-center py-4">
+              <p class="text-muted mb-0">No warehouses added yet.</p>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div> 

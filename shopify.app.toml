@@ -1,20 +1,20 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "bb13ee800bf8686ec4d5b6174db5a66f"
-application_url = "https://example.com/"
+application_url = "https://heroic-wahoo-new.ngrok-free.app/"
 embedded = false
 name = "Kuralis"
 handle = "kuralis"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products, read_orders"
+scopes = "read_products, write_products, read_orders, write_inventory, write_locations, read_inventory, read_customers"
 
 [webhooks]
 api_version = "2024-10"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://heroic-wahoo-new.ngrok-free.app/auth/shopify/callback" ]
 
 [pos]
 embedded = false

@@ -1,0 +1,54 @@
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Job History</h1>
+    
+    <div class="btn-group">
+      <%= link_to "All", admin_jobs_path(status: 'all'), 
+          class: "btn #{@status == 'all' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+      <%= link_to "Running", admin_jobs_path(status: 'running'), 
+          class: "btn #{@status == 'running' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+      <%= link_to "Failed", admin_jobs_path(status: 'failed'), 
+          class: "btn #{@status == 'failed' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Job</th>
+              <th>Status</th>
+              <th>Started</th>
+              <th>Duration</th>
+              <th>Queue Time</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% @job_runs.each do |job| %>
+              <tr>
+                <td>
+                  <%= job.job_class %><br>
+                  <small class="text-muted"><%= job.job_id %></small>
+                </td>
+                <td>
+                  <span class="badge <%= job_status_color(job.status) %>">
+                    <%= job.status %>
+                  </span>
+                </td>
+                <td><%= time_ago_in_words(job.started_at) if job.started_at %> ago</td>
+                <td><%= number_with_precision(job.duration, precision: 2) if job.duration %> seconds</td>
+                <td><%= number_with_precision(job.queue_time, precision: 2) if job.queue_time %> seconds</td>
+                <td><%= job.error_message %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      
+      <%= paginate @job_runs %>
+    </div>
+  </div>
+</div> 

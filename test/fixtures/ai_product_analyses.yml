@@ -1,0 +1,13 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  shop: one
+  image: MyString
+  status: MyString
+  results: 
+
+two:
+  shop: two
+  image: MyString
+  status: MyString
+  results: 

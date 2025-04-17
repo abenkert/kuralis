@@ -1,0 +1,213 @@
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Orders</h1>
+    
+    <div class="d-flex gap-3">
+      <%= button_to trigger_sync_orders_orders_path,
+            method: :post,
+            class: "btn btn-outline-primary",
+            data: { 
+              turbo: true,
+              controller: "sync",
+              action: "sync#startSync"
+            } do %>
+        <div class="d-flex align-items-center">
+          <span class="sync-text">Sync Orders</span>
+          <div class="spinner-border spinner-border-sm ms-2 d-none" 
+               data-sync-target="spinner" 
+               role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+        </div>
+      <% end %>
+
+      <div class="btn-group">
+        <%= link_to "All", orders_path(tab: 'all'), 
+            class: "btn #{@tab == 'all' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+        <%= link_to "Pending", orders_path(tab: 'pending'), 
+            class: "btn #{@tab == 'pending' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+        <%= link_to "Shopify", orders_path(tab: 'shopify'), 
+            class: "btn #{@tab == 'shopify' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+        <%= link_to "eBay", orders_path(tab: 'ebay'), 
+            class: "btn #{@tab == 'ebay' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+        <%= link_to "Completed", orders_path(tab: 'completed'), 
+            class: "btn #{@tab == 'completed' ? 'btn-primary' : 'btn-outline-secondary'}" %>
+      </div>
+    </div>
+  </div>
+
+  <% if @orders.any? %>
+    <div class="table-responsive">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Platform</th>
+            <th>Order ID</th>
+            <th>Date</th>
+            <th>Customer</th>
+            <th>Total</th>
+            <th>Payment Status</th>
+            <th>Shipping Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @orders.each do |order| %>
+            <tr>
+              <td>
+                <span class="badge <%= order.platform == 'ebay' ? 'bg-warning' : 'bg-success' %>">
+                  <%= order.platform.titleize %>
+                </span>
+              </td>
+              <td>#<%= order.platform_order_id %></td>
+              <td><%= order.order_placed_at.in_time_zone('Eastern Time (US & Canada)').strftime("%b %d, %Y %I:%M %p") %></td>
+              <td><%= order.customer_name %></td>
+              <td><%= number_to_currency(order.total_price) %></td>
+              <td>
+                <span class="badge <%= payment_status_color_class(order.payment_status) %>">
+                  <%= order.payment_status&.titleize || 'Unknown' %>
+                </span>
+              </td>
+              <td>
+                <span class="badge <%= shipment_status_color_class(order.fulfillment_status) %>">
+                  <%= fulfillment_status_label(order.fulfillment_status) %>
+                </span>
+              </td>
+              <td>
+                <button class="btn btn-sm btn-outline-secondary" type="button" 
+                        data-bs-toggle="collapse" data-bs-target="#collapse<%= order.id %>" 
+                        aria-expanded="false" aria-controls="collapse<%= order.id %>">
+                  <i class="bi bi-chevron-down"></i>
+                </button>
+              </td>
+            </tr>
+            <tr>
+              <td colspan="8" class="p-0">
+                <div id="collapse<%= order.id %>" class="collapse">
+                  <div class="p-3 bg-light">
+                    <div class="row">
+                      <div class="col-md-8">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                          <h6 class="mb-0">Shipping Address</h6>
+                          
+                            <div class="d-flex gap-2">
+                            <% if order.platform == 'ebay' %>
+                              <button class="btn btn-sm btn-outline-secondary" 
+                                      data-controller="clipboard"
+                                      data-action="clipboard#copy"
+                                      data-clipboard-text="<%= [
+                                        order.shipping_address&.dig('name'),
+                                        order.shipping_address&.dig('street1'),
+                                        order.shipping_address&.dig('street2'),
+                                        "#{order.shipping_address&.dig('city')}, #{order.shipping_address&.dig('state')} #{order.shipping_address&.dig('postal_code')}",
+                                        order.shipping_address&.dig('country')
+                                      ].compact.join("\n") %>"
+                                      data-bs-toggle="tooltip"
+                                      data-bs-placement="top"
+                                      title="Copy to clipboard">
+                                <i class="bi bi-clipboard"></i> Copy
+                              </button>
+                          <% end %>
+                            <% if order.platform == 'ebay' %>
+                              <%= link_to "View on eBay", "https://www.ebay.com/vod/FetchOrderDetails?orderid=#{order.platform_order_id}", 
+                                  class: "btn btn-sm btn-outline-warning",
+                                  target: "_blank" %>
+                            <% elsif order.platform == 'shopify' %>
+                              <%= link_to "View on Shopify", "https://#{@shop.shopify_domain}/admin/orders/#{order.platform_order_id}", 
+                                  class: "btn btn-sm btn-outline-success",
+                                  target: "_blank" %>
+                            <% end %>
+                          </div>
+                        </div>
+
+                        <div class="card">
+                          <div class="card-body">
+                            <div class="row">
+                              <div class="col-md-8">
+                                <p class="mb-0">
+                                  <% if order.platform == 'ebay' %>
+                                    <%= order.shipping_address&.dig('name') %><br>
+                                    <%= order.shipping_address&.dig('street1') %><br>
+                                    <%= order.shipping_address&.dig('street2') if order.shipping_address&.dig('street2').present? %>
+                                    <%= order.shipping_address&.dig('city') %>, <%= order.shipping_address&.dig('state') %> <%= order.shipping_address&.dig('postal_code') %><br>
+                                    <%= order.shipping_address&.dig('country') %>
+                                  <% elsif order.platform == 'shopify' %>
+                                    Not available
+                                  <% end %> 
+                                </p>
+                              </div>
+                              <div class="col-md-4 border-start">
+                                <p class="mb-0">
+                                  <strong>Shipping Cost:</strong><br>
+                                  <%= number_to_currency(order.shipping_cost) %>
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <h6 class="mt-4">Order Items</h6>
+                    <div class="table-responsive">
+                      <table class="table table-sm">
+                        <thead>
+                          <tr>
+                            <th>Item</th>
+                            <th>Quantity</th>
+                            <th>Location</th>
+                            <th>Product</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <% order.order_items.each do |item| %>
+                            <tr>
+                              <td><%= item.title %></td>
+                              <td><%= item.quantity %></td>
+                              <td>
+                                <% if item.kuralis_product %>
+                                  <%= item.kuralis_product.location %>
+                                <% end %>
+                              </td>
+                              <td>
+                                <% if item.kuralis_product %>
+                                  <%= link_to item.kuralis_product.title, 
+                                      '#',
+                                      class: "text-decoration-none" %>
+                                <% else %>
+                                  <span class="text-muted">No product linked</span>
+                                <% end %>
+                              </td>
+                              <td>
+                                <% if item.kuralis_product %>
+                                  <%= link_to "View Product", '#',
+                                      class: "btn btn-sm btn-outline-primary" %>
+                                <% end %>
+                              </td>
+                            </tr>
+                          <% end %>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mt-3">
+      <div class="text-muted">
+        Showing <%= @orders.offset_value + 1 %> to <%= @orders.offset_value + @orders.length %> of <%= @orders.total_count %> orders
+      </div>
+      <div>
+        <%= paginate @orders %>
+      </div>
+    </div>
+  <% else %>
+    <div class="alert alert-info">No orders found</div>
+  <% end %>
+</div>
