@@ -180,6 +180,8 @@ class ImportEbayListingsJob < ApplicationJob
           end_time: Time.parse(item.at_xpath(".//ns:ListingDetails/ns:EndTime", namespaces)&.text.to_s),
           best_offer_enabled: item.at_xpath(".//ns:BestOfferDetails/ns:BestOfferEnabled", namespaces)&.text == "true",
           ebay_status: item.at_xpath(".//ns:SellingStatus/ns:ListingStatus", namespaces)&.text&.downcase,
+          return_profile_id: item.at_xpath(".//ns:SellerProfiles/ns:SellerReturnProfile/ns:ReturnProfileID", namespaces)&.text,
+          payment_profile_id: item.at_xpath(".//ns:SellerProfiles/ns:SellerPaymentProfile/ns:PaymentProfileID", namespaces)&.text,
           last_sync_at: Time.current
         })
 
