@@ -1,4 +1,27 @@
 <%= form_with url: kuralis_settings_path, method: :patch, class: "settings-form", id: "settings_form" do |f| %>
+  <!-- Inventory Sync Setting - Prominently Displayed -->
+  <div class="mb-4 p-3 border border-primary rounded bg-light">
+    <div class="d-flex align-items-center">
+      <div class="form-check form-switch">
+        <%= f.check_box "settings[general][inventory_sync]",
+              checked: @shop.inventory_sync?,
+              class: "form-check-input",
+              style: "transform: scale(1.5); margin-right: 1rem;" %>
+        <div>
+          <label class="form-check-label fw-bold fs-5">
+            Inventory Sync
+          </label>
+          <div class="text-primary">
+            <small>
+              <i class="bi bi-info-circle me-1"></i>
+              This important setting controls whether inventory quantities are adjusted when orders are processed.
+            </small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="mb-3">
     <label class="form-label">Default Description</label>
     <%= f.text_area "settings[general][default_description]",

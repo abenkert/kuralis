@@ -96,6 +96,11 @@ class Shop < ApplicationRecord
     setting.nil? ? true : setting
   end
 
+  def inventory_sync?
+    setting = get_setting("general", "inventory_sync")
+    setting.nil? ? false : setting  # Default to false if not set
+  end
+
   private
 
   def create_default_warehouse

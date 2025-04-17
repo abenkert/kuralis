@@ -18,7 +18,8 @@ class KuralisShopSetting < ApplicationRecord
     "store_location_in_description",
     "store_location_in_specifics",
     "append_description",
-    "archive_products"
+    "archive_products",
+    "inventory_sync"
   ].freeze
 
   # Scopes

@@ -33,7 +33,7 @@ class KuralisProduct < ApplicationRecord
   scope :from_ebay, -> { where(source_platform: "ebay") }
   scope :from_shopify, -> { where(source_platform: "shopify") }
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
-  after_update :schedule_platform_updates
+  after_update :schedule_platform_updates, if: :inventory_sync?
 
   # Handle tags input
   def tags=(value)
@@ -64,6 +64,10 @@ class KuralisProduct < ApplicationRecord
 
   def sync_needed?
     last_synced_at.nil? || last_synced_at < updated_at
+  end
+
+  def inventory_sync?
+    self.shop.inventory_sync?
   end
 
   # Platform eligibility checks
