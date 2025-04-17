@@ -64,7 +64,7 @@
           </div>
           <div class="progress" style="height: 4px;">
             <div class="progress-bar bg-success" role="progressbar" 
-              style="width: <%= (@shop.shopify_products.count.to_f / @shop.kuralis_products.count * 100).round %>%"></div>
+              style="width: <%= @shop.kuralis_products.count.zero? ? 0 : (@shop.shopify_products.count.to_f / @shop.kuralis_products.count * 100).round %>%"></div>
           </div>
         </div>
       </div>
@@ -84,7 +84,7 @@
           </div>
           <div class="progress" style="height: 4px;">
             <div class="progress-bar bg-warning" role="progressbar" 
-              style="width: <%= (@shop.ebay_listings_count.to_f / @shop.kuralis_products.count * 100).round %>%"></div>
+              style="width: <%= @shop.kuralis_products.count.zero? ? 0 : (@shop.ebay_listings_count.to_f / @shop.kuralis_products.count * 100).round %>%"></div>
           </div>
         </div>
       </div>
