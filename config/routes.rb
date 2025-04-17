@@ -36,6 +36,9 @@ Rails.application.routes.draw do
   get "dashboard", to: "dashboard#index", as: :dashboard
   get "settings", to: "settings#index", as: :settings
 
+  # Job status dashboard for tracking background jobs
+  resources :job_status, only: [ :index, :show ]
+
   namespace :kuralis do
     get "ebay_categories/search"
     post "ebay_categories/import"

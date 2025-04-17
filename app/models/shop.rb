@@ -9,6 +9,7 @@ class Shop < ApplicationRecord
   # has_one :user, dependent: :destroy  # Commented out for now
   has_many :shopify_products, dependent: :destroy
   has_many :ai_product_analyses, dependent: :destroy
+  has_many :job_runs, dependent: :destroy
 
   has_many :warehouses
   has_one :default_warehouse, -> { where(is_default: true) }, class_name: "Warehouse"

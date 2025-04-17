@@ -1,13 +1,24 @@
 class ImportEbayListingsJob < ApplicationJob
+  include JobTrackable
   queue_as :default
 
   ENTRIES_PER_PAGE = 200
   MAX_TIME_RANGE_DAYS = 120 # eBay's max time range for GetSellerList API
+  BATCH_SIZE = 100 # Number of items to process in one batch
+
+  attr_accessor :total_listings, :processed_listings, :job_run
 
   def perform(shop_id, last_sync_time = nil)
+    @total_listings = 0
+    @processed_listings = 0
+    @job_run = JobRun.find_by(job_id: job_id)
+
     shop = Shop.find(shop_id)
     ebay_account = shop.shopify_ebay_account
     return unless ebay_account
+
+    # Update job status with initial info
+    update_job_status(total: @total_listings, processed: @processed_listings, message: "Starting import...")
 
     # Track existing listings before import
     existing_item_ids = ebay_account.ebay_listings.pluck(:ebay_item_id)
@@ -21,8 +32,9 @@ class ImportEbayListingsJob < ApplicationJob
       end_time = Time.current
 
       # Find the seller's oldest active listing date instead of using arbitrary cutoff
-      oldest_date = fetch_oldest_listing_date(token_service) || 5.years.ago
+      oldest_date, @total_listings = fetch_oldest_listing_and_total(token_service)
       Rails.logger.info("Using oldest listing date: #{oldest_date}")
+      update_job_status(message: "Using oldest listing date: #{oldest_date}")
 
       # Process one time chunk at a time until we reach the oldest date
       while end_time > oldest_date
@@ -34,23 +46,44 @@ class ImportEbayListingsJob < ApplicationJob
       end
     else
       # If last_sync_time is provided, just get listings from that time to now
-      process_time_period(token_service, ebay_account, last_sync_time, Time.current, processed_item_ids)
+      process_time_period(token_service, ebay_account, last_sync_time, Time.current, processed_item_ids, true)
     end
 
     # Update import timestamp
     ebay_account.update(last_listing_import_at: Time.current)
+
+    # Final status update
+    update_job_status(
+      processed: @processed_listings,
+      total: @total_listings,
+      message: "Import completed: #{@processed_listings} listings processed"
+    )
   rescue => e
     Rails.logger.error("Error in ImportEbayListingsJob: #{e.message}")
     Rails.logger.error(e.backtrace.join("\n"))
+    update_job_status(message: "Error: #{e.message}")
   end
 
-  # private
+  private
 
-  def process_time_period(token_service, ebay_account, start_time, end_time, processed_item_ids)
+  def update_job_status(total: nil, processed: nil, message: nil)
+    return unless @job_run
+
+    progress_data = @job_run.progress_data || {}
+    progress_data[:total] = total if total
+    progress_data[:processed] = processed if processed
+    progress_data[:message] = message if message
+    progress_data[:percent] = ((progress_data[:processed].to_f / progress_data[:total]) * 100).round(2) if progress_data[:total].to_i > 0
+
+    @job_run.update(progress_data: progress_data)
+  end
+
+  def process_time_period(token_service, ebay_account, start_time, end_time, processed_item_ids, quick_sync = false)
     page = 1
     has_more_pages = true
 
     Rails.logger.info("Processing eBay listings from #{start_time} to #{end_time}")
+    update_job_status(message: "Processing eBay listings from #{start_time} to #{end_time}")
 
     while has_more_pages
       begin
@@ -65,7 +98,29 @@ class ImportEbayListingsJob < ApplicationJob
           if items.empty?
             has_more_pages = false
           else
-            processed_item_ids += process_items(items, ebay_account)
+            # Add to total listings count for progress tracking
+            if quick_sync
+              @total_listings += items.size
+              update_job_status(total: @total_listings)
+            end
+
+            # Process items in batches to reduce memory usage
+            items.each_slice(BATCH_SIZE) do |batch|
+              p "TESTING -------------------------------------------------------------"
+              batch_processed_ids = process_items_batch(batch, ebay_account)
+              p "batch_processed_ids: #{batch_processed_ids}"
+              Rails.logger.info("Batch processed IDs: #{batch_processed_ids}")
+              processed_item_ids.concat(batch_processed_ids)
+              @processed_listings += batch_processed_ids.size
+              p "processed_item_ids: #{processed_item_ids}"
+              Rails.logger.info("Total processed listings so far: #{@processed_listings}")
+
+              # Update progress after each batch
+              update_job_status(
+                processed: @processed_listings,
+                message: "Processed #{@processed_listings} of #{@total_listings} listings"
+              )
+            end
 
             # Check if there are more pages
             total_pages = response.at_xpath("//ns:PaginationResult/ns:TotalNumberOfPages", namespaces)&.text.to_i || 0
@@ -79,27 +134,36 @@ class ImportEbayListingsJob < ApplicationJob
         else
           error_message = response&.at_xpath("//ns:Errors/ns:ShortMessage", namespaces)&.text || "Unknown error"
           Rails.logger.error("eBay API error: #{error_message}")
+          update_job_status(message: "eBay API error: #{error_message}")
           has_more_pages = false
         end
       rescue => e
         Rails.logger.error("Error processing eBay listings page #{page}: #{e.message}")
+        update_job_status(message: "Error processing page #{page}: #{e.message}")
         has_more_pages = false
       end
     end
   end
 
-  def process_items(items, ebay_account)
+  def process_items_batch(items, ebay_account)
     processed_ids = []
     namespaces = { "ns" => "urn:ebay:apis:eBLBaseComponents" }
+
+    # Pre-fetch existing listings for this batch to reduce database queries
+    ebay_item_ids = items.map { |item| item.at_xpath(".//ns:ItemID", namespaces).text }
+    existing_listings = ebay_account.ebay_listings.where(ebay_item_id: ebay_item_ids).index_by(&:ebay_item_id)
 
     items.each do |item|
       begin
         ebay_item_id = item.at_xpath(".//ns:ItemID", namespaces).text
         processed_ids << ebay_item_id
 
-        listing = ebay_account.ebay_listings.find_or_initialize_by(ebay_item_id: ebay_item_id)
+        # Use find_or_initialize with the pre-fetched data
+        listing = existing_listings[ebay_item_id] || ebay_account.ebay_listings.new(ebay_item_id: ebay_item_id)
+
         description = prepare_description(item.at_xpath(".//ns:Description", namespaces)&.text)
         location = find_location(description)
+
         # Update attributes regardless of whether it's a new or existing record
         listing.assign_attributes({
           title: item.at_xpath(".//ns:Title", namespaces)&.text,
@@ -126,7 +190,6 @@ class ImportEbayListingsJob < ApplicationJob
           Rails.logger.info("Changes detected for #{ebay_item_id}: #{listing.changes.inspect}")
           if listing.save
             Rails.logger.info("#{listing.new_record? ? 'Created' : 'Updated'} listing #{ebay_item_id}")
-            listing.cache_images unless listing.images.attached?
           else
             Rails.logger.error("Failed to save listing #{ebay_item_id}: #{listing.errors.full_messages.join(', ')}")
           end
@@ -139,10 +202,28 @@ class ImportEbayListingsJob < ApplicationJob
       end
     end
 
+    # Schedule image caching as a separate async job
+    schedule_image_caching(ebay_account.id, processed_ids)
+
     processed_ids
   end
 
+  def schedule_image_caching(account_id, item_ids)
+    # Only schedule for listings that don't already have cached images
+    listings_without_images = EbayListing.where(shopify_ebay_account_id: account_id, ebay_item_id: item_ids)
+                                         .where.not(image_urls: [])
+                                         .reject { |listing| listing.images.attached? }
+                                         .pluck(:id)
+
+    return if listings_without_images.empty?
+
+    # Process images in a separate job to avoid blocking the main import
+    CacheEbayImagesJob.perform_later(account_id, listings_without_images)
+  end
+
   def prepare_description(description)
+    return "" if description.blank?
+
     # First unescape HTML entities
     unescaped = CGI.unescapeHTML(description)
     # Then strip all HTML tags while preserving line breaks
@@ -152,6 +233,8 @@ class ImportEbayListingsJob < ApplicationJob
   end
 
   def find_location(description)
+    return nil if description.blank?
+
     doc = Nokogiri::HTML(description)
     potential_code = doc.at_css("div font")&.text
     if potential_code&.match?(/\A[OW]\d+.*\z/)
@@ -217,9 +300,11 @@ class ImportEbayListingsJob < ApplicationJob
   end
 
   # Find the seller's oldest active listing date
-  def fetch_oldest_listing_date(token_service)
+  def fetch_oldest_listing_and_total(token_service)
     token = token_service.fetch_or_refresh_access_token
     uri = URI("https://api.ebay.com/ws/api.dll")
+
+    result = { oldest_listing_date: 3.years.ago, total_listings: 0 }
 
     xml_request = <<~XML
       <?xml version="1.0" encoding="utf-8"?>
@@ -256,7 +341,8 @@ class ImportEbayListingsJob < ApplicationJob
         # Try to extract start time from the oldest item
         start_time_node = doc.at_xpath("//ns:ActiveList/ns:ItemArray/ns:Item/ns:ListingDetails/ns:StartTime", namespaces)
         if start_time_node && start_time_node.text.present?
-          return Time.parse(start_time_node.text.to_s)
+          result[:oldest_listing_date] = Time.parse(start_time_node.text.to_s)
+          result[:total_listings] = doc.at_xpath("//ns:ActiveList/ns:PaginationResult/ns:TotalNumberOfEntries", namespaces)&.text&.to_i
         end
       end
     rescue => e
@@ -265,6 +351,6 @@ class ImportEbayListingsJob < ApplicationJob
 
     # Fall back to 3 years if we couldn't determine oldest listing
     Rails.logger.info("Could not determine oldest listing date, falling back to 3 years ago")
-    3.years.ago
+    [ result[:oldest_listing_date], result[:total_listings] ]
   end
 end
