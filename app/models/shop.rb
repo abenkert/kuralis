@@ -99,6 +99,7 @@ class Shop < ApplicationRecord
   private
 
   def create_default_warehouse
+    return if warehouses.any?
     # Create a default warehouse with the shop's address information if available
     address = "Default Location"
     city = "New York"
