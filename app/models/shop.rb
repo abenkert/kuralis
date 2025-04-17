@@ -17,7 +17,7 @@ class Shop < ApplicationRecord
   # Settings methods
   has_many :kuralis_shop_settings, dependent: :destroy
 
-  after_save :create_default_warehouse, on: :create
+  after_save :create_default_warehouse
 
   def api_version
     ShopifyApp.configuration.api_version
