@@ -106,13 +106,10 @@ class ImportEbayListingsJob < ApplicationJob
 
             # Process items in batches to reduce memory usage
             items.each_slice(BATCH_SIZE) do |batch|
-              p "TESTING -------------------------------------------------------------"
               batch_processed_ids = process_items_batch(batch, ebay_account)
-              p "batch_processed_ids: #{batch_processed_ids}"
               Rails.logger.info("Batch processed IDs: #{batch_processed_ids}")
               processed_item_ids.concat(batch_processed_ids)
               @processed_listings += batch_processed_ids.size
-              p "processed_item_ids: #{processed_item_ids}"
               Rails.logger.info("Total processed listings so far: #{@processed_listings}")
 
               # Update progress after each batch
