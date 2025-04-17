@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_04_15_141726) do
+ActiveRecord::Schema[8.0].define(version: 2025_04_17_182947) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -186,9 +186,14 @@ ActiveRecord::Schema[8.0].define(version: 2025_04_15_141726) do
     t.bigint "ai_product_analysis_id"
     t.boolean "is_draft", default: false
     t.bigint "warehouse_id"
+    t.datetime "last_inventory_update"
+    t.datetime "imported_at"
+    t.integer "initial_quantity"
     t.index ["ai_product_analysis_id"], name: "index_kuralis_products_on_ai_product_analysis_id"
     t.index ["ebay_listing_id"], name: "index_kuralis_products_on_ebay_listing_id"
+    t.index ["imported_at"], name: "index_kuralis_products_on_imported_at"
     t.index ["is_draft"], name: "index_kuralis_products_on_is_draft"
+    t.index ["last_inventory_update"], name: "index_kuralis_products_on_last_inventory_update"
     t.index ["shop_id"], name: "index_kuralis_products_on_shop_id"
     t.index ["shopify_product_id"], name: "index_kuralis_products_on_shopify_product_id"
     t.index ["sku"], name: "index_kuralis_products_on_sku"

@@ -53,6 +53,7 @@ class MigrateEbayListingsJob < ApplicationJob
             description: listing.description,
             base_price: listing.sale_price,
             base_quantity: listing.quantity,
+            initial_quantity: listing.quantity,
             sku: nil, # We'll need to generate this
             brand: listing.item_specifics["Brand"],
             condition: listing.condition_description,
@@ -67,7 +68,8 @@ class MigrateEbayListingsJob < ApplicationJob
             weight_oz: weight_oz,
             tags: tags,
             created_at: Time.current,
-            updated_at: Time.current
+            updated_at: Time.current,
+            imported_at: Time.current
           }
         rescue => e
           Rails.logger.error "Failed to prepare data for eBay listing #{listing.id}: #{e.message}"
