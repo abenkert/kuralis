@@ -93,6 +93,40 @@ export default class extends Controller {
     form.submit()
   }
 
+  async migrateActive(event) {
+    event.preventDefault()
+    
+    try {
+
+      if (confirm(`Are you sure you want to migrate all active listings? This may take some time.`)) {
+        const form = document.createElement('form')
+        form.method = 'POST'
+        form.action = '/ebay/listings/migrations'
+        
+        // Add authenticity token
+        const authToken = document.querySelector('meta[name="csrf-token"]').content
+        const authInput = document.createElement('input')
+        authInput.type = 'hidden'
+        authInput.name = 'authenticity_token'
+        authInput.value = authToken
+        form.appendChild(authInput)
+        
+        // Add migrate_all flag
+        const migrateActiveInput = document.createElement('input')
+        migrateActiveInput.type = 'hidden'
+        migrateActiveInput.name = 'migrate_active'
+        migrateActiveInput.value = 'true'
+        form.appendChild(migrateActiveInput)
+
+        document.body.appendChild(form)
+        form.submit()
+      }
+    } catch (error) {
+      console.error('Error fetching unmigrated count:', error)
+      alert('Error checking available listings. Please try again.')
+    }
+  }
+
   async migrateAll(event) {
     event.preventDefault()
     

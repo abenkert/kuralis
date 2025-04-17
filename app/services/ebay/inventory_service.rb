@@ -25,9 +25,6 @@ module Ebay
       if result[:success]
         Rails.logger.info "Successfully updated eBay listing #{@ebay_listing.ebay_item_id}"
         @ebay_listing.update(
-          title: @product.title,
-          description: @product.description.to_s,
-          original_price: @product.base_price,
           quantity: @product.base_quantity,
           ebay_status: "active"
         )
@@ -52,9 +49,6 @@ module Ebay
           </RequesterCredentials>
           <Item>
             <ItemID>#{@ebay_listing.ebay_item_id}</ItemID>
-            <Title>#{CGI.escapeHTML(@product.title)}</Title>
-            <Description>#{CGI.escapeHTML(@product.description.to_s)}</Description>
-            <StartPrice>#{@product.base_price}</StartPrice>
             <Quantity>#{@product.base_quantity}</Quantity>
           </Item>
         </ReviseFixedPriceItemRequest>

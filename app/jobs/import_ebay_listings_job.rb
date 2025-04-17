@@ -157,7 +157,11 @@ class ImportEbayListingsJob < ApplicationJob
 
         # Use find_or_initialize with the pre-fetched data
         listing = existing_listings[ebay_item_id] || ebay_account.ebay_listings.new(ebay_item_id: ebay_item_id)
-
+        # Skip completed listings
+        # TODO: Add support for completed listings
+        # We may want to allow the users to configure this in the settings
+        listing_status = item.at_xpath(".//ns:SellingStatus/ns:ListingStatus", namespaces)&.text&.downcase
+        next if listing_status == "completed"
         description = prepare_description(item.at_xpath(".//ns:Description", namespaces)&.text)
         location = find_location(description)
 
