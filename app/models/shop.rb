@@ -100,11 +100,11 @@ class Shop < ApplicationRecord
 
   def create_default_warehouse
     # Create a default warehouse with the shop's address information if available
-    address = self.address1.presence || "Default Location"
-    city = self.city.presence || "New York"
-    state = self.province.presence || "NY"
-    zip = self.zip.presence || "11004"
-    country_code = self.country_code.presence || "US"
+    address = "Default Location"
+    city = "New York"
+    state = "NY"
+    zip = "11004"
+    country_code = "US"
 
     warehouses.create!(
       name: "Default Warehouse",
