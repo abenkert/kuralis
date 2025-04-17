@@ -1,5 +1,5 @@
 class DashboardController < AuthenticatedController
-  layout 'authenticated'
+  layout "authenticated"
 
   def index
     @shop = current_shop

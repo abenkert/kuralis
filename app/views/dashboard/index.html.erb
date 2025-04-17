@@ -286,7 +286,7 @@
                 <i class="bi bi-shop text-white"></i>
               </div>
               <h6 class="mb-0">Shopify</h6>
-              <p class="text-muted mb-0"><%= (@shop.shopify_products.count.to_f / @shop.kuralis_products.count * 100).round %>%</p>
+              <p class="text-muted mb-0"><%= @shop.kuralis_products.count.zero? ? 0 : (@shop.shopify_products.count.to_f / @shop.kuralis_products.count * 100).round %>%</p>
             </div>
             <div class="col-4 text-center">
               <div class="d-flex justify-content-center align-items-center rounded-circle mx-auto mb-2" 
@@ -294,7 +294,7 @@
                 <i class="bi bi-tags text-white"></i>
               </div>
               <h6 class="mb-0">eBay</h6>
-              <p class="text-muted mb-0"><%= (@shop.ebay_listings_count.to_f / @shop.kuralis_products.count * 100).round %>%</p>
+              <p class="text-muted mb-0"><%= @shop.kuralis_products.count.zero? ? 0 : (@shop.ebay_listings_count.to_f / @shop.kuralis_products.count * 100).round %>%</p>
             </div>
             <div class="col-4 text-center">
               <div class="d-flex justify-content-center align-items-center rounded-circle mx-auto mb-2" 
@@ -302,7 +302,15 @@
                 <i class="bi bi-box text-white"></i>
               </div>
               <h6 class="mb-0">Unlinked</h6>
-              <p class="text-muted mb-0"><%= (100 - (@shop.shopify_products.count.to_f / @shop.kuralis_products.count * 100).round - (@shop.ebay_listings_count.to_f / @shop.kuralis_products.count * 100).round).round %>%</p>
+              <p class="text-muted mb-0"><%= 
+              if @shop.kuralis_products.count.zero?
+                100
+              else
+                shopify_pct = (@shop.shopify_products.count.to_f / @shop.kuralis_products.count * 100).round
+                ebay_pct = (@shop.ebay_listings_count.to_f / @shop.kuralis_products.count * 100).round
+                (100 - shopify_pct - ebay_pct).round
+              end
+              %>%</p>
             </div>
           </div>
         </div>
