@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_04_17_182947) do
+ActiveRecord::Schema[8.0].define(version: 2025_04_17_182950) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -135,10 +135,12 @@ ActiveRecord::Schema[8.0].define(version: 2025_04_17_182947) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "order_id"
+    t.boolean "processed", default: false
     t.index ["created_at"], name: "index_inventory_transactions_on_created_at"
     t.index ["kuralis_product_id"], name: "index_inventory_transactions_on_kuralis_product_id"
     t.index ["order_id"], name: "index_inventory_transactions_on_order_id"
     t.index ["order_item_id"], name: "index_inventory_transactions_on_order_item_id"
+    t.index ["processed"], name: "index_inventory_transactions_on_processed"
     t.index ["transaction_type"], name: "index_inventory_transactions_on_transaction_type"
   end
 

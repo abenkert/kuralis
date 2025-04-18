@@ -1,5 +1,5 @@
 module Shopify
-  class UpdateProductJob < ApplicationJob
+  class UpdateProductInventoryJob < ApplicationJob
     queue_as :default
 
     def perform(shop_id, shopify_product_id, kuralis_product_id)

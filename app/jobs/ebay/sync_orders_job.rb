@@ -242,30 +242,23 @@ module Ebay
           # Only adjust inventory if inventory sync is enabled and this is a new order
           # or an order that happened AFTER the product was imported
           should_adjust_inventory = @shop.inventory_sync? &&
-                                    (
-                                      # Check if this is a newly created order that we just added to our system
-                                      order.created_at >= 10.minutes.ago ||
-                                      # OR if it's a status update to an existing order we were already tracking
-                                      order.updated_at != order.created_at ||
-                                      # OR if the order was placed AFTER the product was imported into our system
-                                      # This is critical to prevent double-counting historical orders
                                       (
                                         kuralis_product.imported_at.present? &&
                                         order.order_placed_at.present? &&
                                         order.order_placed_at > kuralis_product.imported_at
                                       )
-                                    )
+
 
           if should_adjust_inventory
             if order.cancelled?
-              InventoryService.release_inventory(
+              ::InventoryService.release_inventory(
                 kuralis_product: kuralis_product,
                 quantity: quantity,
                 order: order,
                 order_item: order_item
               )
             else
-              InventoryService.allocate_inventory(
+              ::InventoryService.allocate_inventory(
                 kuralis_product: kuralis_product,
                 quantity: quantity,
                 order: order,

@@ -23,6 +23,7 @@ class InventoryService
       return existing_transaction
     end
 
+
     Rails.logger.info "Allocating inventory for order_id=#{order.id}, product_id=#{kuralis_product.id}, quantity=#{quantity}"
 
     begin
@@ -47,7 +48,8 @@ class InventoryService
               quantity: -quantity,
               transaction_type: "allocation",
               previous_quantity: kuralis_product.base_quantity,
-              new_quantity: kuralis_product.base_quantity - quantity
+              new_quantity: kuralis_product.base_quantity - quantity,
+              processed: false
             )
 
             # Save current time for tracking inventory change timing
@@ -63,6 +65,9 @@ class InventoryService
 
             kuralis_product.update!(update_data)
 
+            # Schedule inventory processing
+            schedule_inventory_processing(kuralis_product)
+
             # Return the transaction for potential future use
             inventory_transaction
           else
@@ -75,7 +80,8 @@ class InventoryService
               transaction_type: "allocation_failed",
               previous_quantity: kuralis_product.base_quantity,
               new_quantity: kuralis_product.base_quantity,
-              notes: "Insufficient Inventory: Requested #{quantity}, Available #{kuralis_product.base_quantity}"
+              notes: "Insufficient Inventory: Requested #{quantity}, Available #{kuralis_product.base_quantity}",
+              processed: false
             )
 
             # Create notification for store owner
@@ -92,6 +98,9 @@ class InventoryService
                 available: kuralis_product.base_quantity
               }
             )
+
+            # Schedule inventory processing
+            schedule_inventory_processing(kuralis_product)
 
             # Return the failed transaction
             inventory_transaction
@@ -160,7 +169,8 @@ class InventoryService
             quantity: quantity,
             transaction_type: "release",
             previous_quantity: kuralis_product.base_quantity,
-            new_quantity: kuralis_product.base_quantity + quantity
+            new_quantity: kuralis_product.base_quantity + quantity,
+            processed: false
           )
 
           # Always update last_inventory_update for tracking
@@ -169,6 +179,9 @@ class InventoryService
             status: "active",
             last_inventory_update: Time.current
           )
+
+          # Schedule inventory processing
+          schedule_inventory_processing(kuralis_product)
 
           # Return the transaction for potential future use
           inventory_transaction
@@ -221,7 +234,8 @@ class InventoryService
               transaction_type: "reconciliation",
               previous_quantity: current_quantity,
               new_quantity: expected_quantity,
-              notes: "Inventory reconciliation adjustment: #{discrepancy > 0 ? 'Added' : 'Removed'} #{discrepancy.abs} units"
+              notes: "Inventory reconciliation adjustment: #{discrepancy > 0 ? 'Added' : 'Removed'} #{discrepancy.abs} units",
+              processed: false
             )
 
             # Update with the reconciled quantity
@@ -229,6 +243,9 @@ class InventoryService
               base_quantity: expected_quantity,
               last_inventory_update: Time.current
             )
+
+            # Schedule inventory processing
+            schedule_inventory_processing(kuralis_product)
 
             # Notify store owner of significant discrepancies
             if discrepancy.abs >= 5 # Threshold for notification
@@ -291,7 +308,8 @@ class InventoryService
             previous_quantity: kuralis_product.base_quantity,
             new_quantity: kuralis_product.base_quantity + quantity_change,
             notes: notes,
-            metadata: { user_id: user_id }
+            metadata: { user_id: user_id },
+            processed: false
           )
 
           new_quantity = kuralis_product.base_quantity + quantity_change
@@ -310,6 +328,9 @@ class InventoryService
           end
 
           kuralis_product.update!(update_data)
+
+          # Schedule inventory processing
+          schedule_inventory_processing(kuralis_product)
 
           true
         end
@@ -343,5 +364,11 @@ class InventoryService
 
     # Initial quantity + all transaction changes
     [ initial_quantity + transaction_total, 0 ].max # Ensure we never calculate negative inventory
+  end
+
+  # Schedule the background job to process inventory transactions
+  def self.schedule_inventory_processing(kuralis_product)
+    # Use deliver_later to prevent transaction interference
+    ProcessInventoryTransactionsJob.set(wait: 5.seconds).perform_later(kuralis_product.shop_id, kuralis_product.id)
   end
 end

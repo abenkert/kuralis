@@ -1,5 +1,5 @@
 module Ebay
-  class UpdateListingJob < ApplicationJob
+  class UpdateListingInventoryJob < ApplicationJob
     queue_as :default
 
     def perform(shop_id, ebay_listing_id, kuralis_product_id)
@@ -8,6 +8,7 @@ module Ebay
       kuralis_product = shop.kuralis_products.find(kuralis_product_id)
 
       # Use the InventoryService to handle the update/end logic
+      # TODO: We need to pass in the inventory_only flag to the InventoryService
       inventory_service = Ebay::InventoryService.new(ebay_listing, kuralis_product)
       result = inventory_service.update_inventory
 

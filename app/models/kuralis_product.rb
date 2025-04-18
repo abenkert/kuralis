@@ -33,7 +33,9 @@ class KuralisProduct < ApplicationRecord
   scope :from_ebay, -> { where(source_platform: "ebay") }
   scope :from_shopify, -> { where(source_platform: "shopify") }
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
-  after_update :schedule_platform_updates, if: :inventory_sync?
+
+  after_update :schedule_inventory_sync, if: -> { saved_change_to_base_quantity? }
+  # after_update :schedule_general_updates, if: :should_update_platforms?
 
   # Handle tags input
   def tags=(value)
@@ -281,15 +283,27 @@ class KuralisProduct < ApplicationRecord
 
     Rails.logger.info "Scheduling platform updates for #{id}"
 
-    # Use the central platform sync service
-    PlatformSyncService.sync_product(self)
+    Rails.logger.warn "TODO: Implement platform updates in schedule_platform_updates"
+    nil
+  end
+
+  def schedule_inventory_sync
+    # Only schedule inventory sync if inventory_sync is enabled
+    return unless inventory_sync?
+
+    Rails.logger.info "Inventory change detected for product_id=#{id}"
+
+    # Record the timestamp of this inventory update
+    self.update_column(:last_inventory_update, Time.current)
+
+    # Schedule the job to process inventory transactions
+    ProcessInventoryTransactionsJob.set(wait: 5.seconds).perform_later(shop.id, id)
   end
 
   # TODO: We need to possibly look at changes to ebay_product_attribute and shopify_product_attributes
   def should_update_platforms?
     # Attributes that should trigger platform updates when changed
     relevant_attributes = [
-      :base_quantity,
       :base_price,
       :title,
       :description,

@@ -19,26 +19,23 @@ module Shopify
 
     def update_product
       # Update product details
-      product_updated = update_product_details
+      # product_updated = update_product_details
 
       # Update variant price
-      variant_updated = update_variant_price
+      # variant_updated = update_variant_price
 
       # Update inventory level separately
       inventory_updated = update_inventory_level
 
-      if product_updated && variant_updated && inventory_updated
+      if inventory_updated
         @shopify_product.update(
-          title: @product.title,
-          description: @product.description.to_s,
           price: @product.base_price,
-          quantity: @product.base_quantity,
           status: "active"
         )
         Rails.logger.info "Updated Shopify product #{@shopify_product.shopify_product_id} with latest information"
         true
       else
-        Rails.logger.error "Failed to update some aspects of Shopify product"
+        Rails.logger.error "Failed to update inventory of Shopify product"
         false
       end
     rescue => e
@@ -46,69 +43,70 @@ module Shopify
       false
     end
 
-    def update_product_details
-      result = @client.query(
-        query: product_update_mutation,
-        variables: {
-          input: {
-            id: @shopify_product.gid,
-            title: @shopify_product.title,
-            descriptionHtml: @product.description.to_s,
-            status: "ACTIVE"
-          }
-        }
-      )
+    # TODO: We need to move this to a different job for just updating details
+    # def update_product_details
+    #   result = @client.query(
+    #     query: product_update_mutation,
+    #     variables: {
+    #       input: {
+    #         id: @shopify_product.gid,
+    #         title: @shopify_product.title,
+    #         descriptionHtml: @product.description.to_s,
+    #         status: "ACTIVE"
+    #       }
+    #     }
+    #   )
 
-      if result.body["data"] && result.body["data"]["productUpdate"] && result.body["data"]["productUpdate"]["product"]
-        true
-      else
-        error_message = result.body["errors"] || result.body["data"]&.dig("productUpdate", "userErrors")
-        Rails.logger.error "Failed to update Shopify product details: #{error_message}"
-        false
-      end
-    rescue => e
-      Rails.logger.error "Failed to update Shopify product details: #{e.message}"
-      false
-    end
+    #   if result.body["data"] && result.body["data"]["productUpdate"] && result.body["data"]["productUpdate"]["product"]
+    #     true
+    #   else
+    #     error_message = result.body["errors"] || result.body["data"]&.dig("productUpdate", "userErrors")
+    #     Rails.logger.error "Failed to update Shopify product details: #{error_message}"
+    #     false
+    #   end
+    # rescue => e
+    #   Rails.logger.error "Failed to update Shopify product details: #{e.message}"
+    #   false
+    # end
 
-    def update_variant_price
-      # Add debug logging
-      Rails.logger.info "Updating variant with gid: #{@shopify_product.variant_gid}"
+    # def update_variant_price
+    #   # Add debug logging
+    #   Rails.logger.info "Updating variant with gid: #{@shopify_product.variant_gid}"
 
-      # Get the first variant ID directly from the product
-      variant_data = get_first_variant_id
+    #   # Get the first variant ID directly from the product
+    #   variant_data = get_first_variant_id
 
-      if variant_data.nil?
-        Rails.logger.error "Could not find a valid variant ID for product #{@shopify_product.gid}"
-        return false
-      end
+    #   if variant_data.nil?
+    #     Rails.logger.error "Could not find a valid variant ID for product #{@shopify_product.gid}"
+    #     return false
+    #   end
 
-      Rails.logger.info "Using variant ID: #{variant_data[:variant_id]}"
+    #   Rails.logger.info "Using variant ID: #{variant_data[:variant_id]}"
 
-      result = @client.query(
-        query: variant_update_mutation,
-        variables: {
-            productId: @shopify_product.gid,
-            variants: [
-              {
-                id: variant_data[:variant_id],
-                price: @product.base_price.to_s
-              }
-            ]
-          }
-      )
+    #   result = @client.query(
+    #     query: variant_update_mutation,
+    #     variables: {
+    #         productId: @shopify_product.gid,
+    #         variants: [
+    #           {
+    #             id: variant_data[:variant_id],
+    #             price: @product.base_price.to_s
+    #           }
+    #         ]
+    #       }
+    #   )
 
-      if result.body["data"] && result.body["data"]["productVariantsBulkUpdate"] && result.body["data"]["productVariantsBulkUpdate"]["productVariants"]
-        true
-      else
-        error_message = result.body["errors"] || result.body["data"]&.dig("productVariantsBulkUpdate", "userErrors")
-        Rails.logger.error "Failed to update Shopify variant price: #{error_message}"
-        false
-      end
-    rescue => e
-      Rails.logger.error "Failed to update Shopify variant price: #{e.message}"
-      false
-    end
+    #   if result.body["data"] && result.body["data"]["productVariantsBulkUpdate"] && result.body["data"]["productVariantsBulkUpdate"]["productVariants"]
+    #     true
+    #   else
+    #     error_message = result.body["errors"] || result.body["data"]&.dig("productVariantsBulkUpdate", "userErrors")
+    #     Rails.logger.error "Failed to update Shopify variant price: #{error_message}"
+    #     false
+    #   end
+    # rescue => e
+    #   Rails.logger.error "Failed to update Shopify variant price: #{e.message}"
+    #   false
+    # end
 
     def update_inventory_level
       # Get the inventory item ID

@@ -78,11 +78,27 @@ module Kuralis
 
     def update
       @product = current_shop.kuralis_products.find(params[:id])
+      product_attrs = product_params
 
-      # Prepare attributes for update
-      product_attrs = product_params.dup
+      # Handle inventory transactions for manual quantity changes
+      if product_attrs[:base_quantity].present? && @product.base_quantity != product_attrs[:base_quantity].to_i
+        old_quantity = @product.base_quantity
+        new_quantity = product_attrs[:base_quantity].to_i
+        quantity_change = new_quantity - old_quantity
 
-      # Handle image deletion first
+        # Create a manual adjustment transaction
+        InventoryTransaction.create!(
+          kuralis_product: @product,
+          quantity: quantity_change,
+          transaction_type: "manual_adjustment",
+          previous_quantity: old_quantity,
+          new_quantity: new_quantity,
+          notes: "Manual inventory adjustment via UI",
+          processed: false
+        )
+      end
+
+      # Handle image deletions
       if params[:kuralis_product] && params[:kuralis_product][:images_to_delete].present?
         params[:kuralis_product][:images_to_delete].each do |image_id|
           image = @product.images.find_by(id: image_id)

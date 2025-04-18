@@ -91,6 +91,7 @@ module Shopify
           )
 
           update_order_status(order, order_data)
+          p order_data
         rescue => e
           Rails.logger.error "Failed to process order #{order_data['id']}: #{e.message}"
         end
@@ -117,43 +118,49 @@ module Shopify
     def process_order_items(order, line_items)
       line_items.each do |edge|
         item = edge["node"]
+        # If the product was deleted from shopify we wont get a product id back.
+        # In this case we can skip the order item.
+        next if item["product"].nil?
+        product_id = extract_id_from_gid(item["product"]["id"])
+
         order_item = order.order_items.find_or_initialize_by(
           platform: "shopify",
-          platform_item_id: extract_id_from_gid(item["id"])
+          platform_item_id: product_id
         )
 
-        variant_id = extract_id_from_gid(item["variant"]["id"])
-        kuralis_product = ShopifyProduct.find_by(shopify_variant_id: variant_id)&.kuralis_product
+        kuralis_product = ShopifyProduct.find_by(shopify_product_id: product_id)&.kuralis_product
+
+        order_item.update!(
+          title: item["title"],
+          quantity: item["quantity"].to_i,
+          kuralis_product: kuralis_product
+        )
+
+        order_item.save!
 
         if kuralis_product
           # Only adjust inventory if inventory sync is enabled and this is a new order
           # or an order that happened AFTER the product was imported
           should_adjust_inventory = @shop.inventory_sync? &&
-                                   (
-                                     # Check if this is a newly created order that we just added to our system
-                                     order.created_at >= 10.minutes.ago ||
-                                     # OR if it's a status update to an existing order we were already tracking
-                                     order.updated_at != order.created_at ||
-                                     # OR if the order was placed AFTER the product was imported into our system
-                                     # This is critical to prevent double-counting historical orders
                                      (
                                        kuralis_product.imported_at.present? &&
                                        order.order_placed_at.present? &&
                                        order.order_placed_at > kuralis_product.imported_at
                                      )
-                                   )
 
           if should_adjust_inventory
             if order.cancelled?
-              InventoryService.release_inventory(
+              ::InventoryService.release_inventory(
                 kuralis_product: kuralis_product,
                 quantity: item["quantity"],
+                order: order,
                 order_item: order_item
               )
             else
-              InventoryService.allocate_inventory(
+              ::InventoryService.allocate_inventory(
                 kuralis_product: kuralis_product,
                 quantity: item["quantity"],
+                order: order,
                 order_item: order_item
               )
             end
@@ -161,12 +168,6 @@ module Shopify
             Rails.logger.info "Skipping inventory adjustment for historical Shopify order: #{order.platform_order_id}. Order date: #{order.order_placed_at}, Product import date: #{kuralis_product.imported_at}"
           end
         end
-
-        order_item.update!(
-          title: item["title"],
-          quantity: item["quantity"],
-          kuralis_product: kuralis_product
-        )
       end
     end
 
@@ -227,6 +228,9 @@ module Shopify
                       id
                       title
                       quantity
+                      product {
+                        id
+                      }
                       variant {
                         id
                       }
