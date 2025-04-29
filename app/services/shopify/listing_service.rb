@@ -7,108 +7,90 @@ module Shopify
     end
 
     def create_listing
-      # We currently do not support multiple variants
       return false if @product.shopify_product.present?
 
       product_variables = {
-          "synchronous": true,
-          "productSet": {
-            "title": @product.title,
-            "descriptionHtml": build_item_description,
-            "tags": @product.tags,
-            "files": prepare_product_images,
-            "productOptions": [
-              {
-                "name": "Title",
-                "position": 1,
-                "values": [
-                  {
-                    "name": "Default Title"
-                  }
-                ]
-              }
-            ],
-            "variants": [
-              {
-                "optionValues": [
-                  {
-                    "optionName": "Title",
-                    "name": "Default Title"
-                  }
-                ],
-                "inventoryItem": {
-                  "tracked": true,
-                  "measurement": {
-                    "weight": {
-                      "unit": "OUNCES",
-                      "value": @product.weight_oz.to_f
-                    }
-                  }
-                },
-                "inventoryQuantities": [
-                  {
-                    "locationId": @shop.default_location_id,
-                    "name": "available",
-                    "quantity": @product.base_quantity
-                  }
-                ],
-                "price": @product.base_price
-              }
-            ]
-          }
+        "synchronous": true,
+        "productSet": {
+          "title": @product.title,
+          "descriptionHtml": build_item_description,
+          "tags": @product.tags,
+          "files": prepare_product_images,
+          "productOptions": [
+            {
+              "name": "Title",
+              "position": 1,
+              "values": [
+                { "name": "Default Title" }
+              ]
+            }
+          ],
+          "variants": [
+            {
+              "optionValues": [
+                { "optionName": "Title", "name": "Default Title" }
+              ],
+              "inventoryItem": {
+                "tracked": true,
+                "measurement": {
+                  "weight": { "unit": "OUNCES", "value": @product.weight_oz.to_f }
+                }
+              },
+              "inventoryQuantities": [
+                { "locationId": @shop.default_location_id, "name": "available", "quantity": @product.base_quantity }
+              ],
+              "price": @product.base_price
+            }
+          ]
         }
+      }
 
       product_response = @client.query(
         query: build_create_product_mutation,
         variables: product_variables
       )
 
-      if product_response && product_response.body["data"] && product_response.body["data"]["productSet"]["product"]
-          product_data = product_response.body["data"]["productSet"]["product"]
-          variant_data = product_data["variants"]["nodes"].first
+      # If successful, create the ShopifyProduct record
+      if product_response.body["data"] && product_response.body["data"]["productSet"] && product_response.body["data"]["productSet"]["product"]
+        product_data = product_response.body["data"]["productSet"]["product"]
+        variant_data = product_data["variants"]["nodes"].first
 
-          product_id = product_data["id"].split("/").last
-          handle = product_data["handle"]
-          variant_id = variant_data["inventoryItem"]["id"].split("/").last
+        product_id = product_data["id"].split("/").last
+        handle = product_data["handle"]
+        variant_id = variant_data["inventoryItem"]["id"].split("/").last
 
-          shopify_product = @product.create_shopify_product!(
-              shop: @shop,
-              shopify_product_id: product_id,
-              shopify_variant_id: variant_id,
-              handle: handle,
-              title: @product.title,
-              description: @product.description,
-              price: @product.base_price,
-              quantity: @product.base_quantity,
-              inventory_location: @product.location,
-              tags: @product.tags,
-              sku: @product.sku,
-              status: "active",
-              published: true
-            )
+        shopify_product = @product.create_shopify_product!(
+          shop: @shop,
+          shopify_product_id: product_id,
+          shopify_variant_id: variant_id,
+          handle: handle,
+          title: @product.title,
+          description: @product.description,
+          price: @product.base_price,
+          quantity: @product.base_quantity,
+          inventory_location: @product.location,
+          tags: @product.tags,
+          sku: @product.sku,
+          status: "active",
+          published: true
+        )
 
-            # Attach the same images from KuralisProduct
-            if @product.images.attached?
-              @product.images.each do |image|
-                image.blob.open do |tempfile|
-                  shopify_product.images.attach(
-                    io: tempfile,
-                    filename: image.filename.to_s,
-                    content_type: image.content_type,
-                    identify: false  # Skip automatic content type identification
-                  )
-                end
-              end
+        # Attach the same images from KuralisProduct
+        if @product.images.attached?
+          @product.images.each do |image|
+            image.blob.open do |tempfile|
+              shopify_product.images.attach(
+                io: tempfile,
+                filename: image.filename.to_s,
+                content_type: image.content_type,
+                identify: false
+              )
             end
-      else
-          Rails.logger.error "Error creating Shopify product: #{product_response.body['errors']}"
-          false
+          end
+        end
       end
-      true
-    rescue => e
-      Rails.logger.error "Error creating Shopify product: #{e.message}"
-      Rails.logger.error e.backtrace.join("\n")
-      false
+
+      product_response # Return the full response for rate limit inspection
     end
 
     def build_item_description

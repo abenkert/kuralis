@@ -11,12 +11,12 @@ module Shopify
         existing_product_ids = shop.shopify_products.pluck(:shopify_product_id)
         processed_product_ids = []
         after_cursor = nil
-        
+
         loop do
           response = client.query(
             query: products_query,
-            variables: { 
-              first: 10, 
+            variables: {
+              first: 10,
               after: after_cursor,
               query: nil
             }
@@ -26,7 +26,7 @@ module Shopify
           processed_product_ids += process_products(products, shop)
 
           page_info = response.body["data"]["products"]["pageInfo"]
-          
+
           if page_info["hasNextPage"]
             after_cursor = response.body["data"]["products"]["edges"].last["cursor"]
           else
@@ -40,10 +40,10 @@ module Shopify
           shop.shopify_products
               .where(shopify_product_id: deleted_product_ids)
               .update_all(
-                status: 'deleted',
+                status: "deleted",
                 last_synced_at: Time.current
               )
-          
+
           Rails.logger.info "Marked #{deleted_product_ids.size} products as deleted"
         end
 
@@ -58,7 +58,7 @@ module Shopify
 
     def process_products(products, shop)
       processed_ids = []
-      
+
       products.each do |edge|
         begin
           product = edge["node"]
@@ -66,7 +66,7 @@ module Shopify
 
           product_id = extract_id_from_gid(product["id"])
           processed_ids << product_id
-          
+
           variant_id = extract_id_from_gid(variant["id"])
           image_urls = product["images"]["edges"].map { |img| img["node"]["url"] }
 
@@ -109,7 +109,7 @@ module Shopify
           Rails.logger.error e.backtrace.join("\n")
         end
       end
-      
+
       processed_ids
     end
 
@@ -163,12 +163,12 @@ module Shopify
 
     def extract_id_from_gid(gid)
       return nil if gid.blank?
-      
+
       # Extract the numeric ID from formats like "gid://shopify/Product/12345"
-      gid.split('/').last
+      gid.split("/").last
     rescue
       Rails.logger.error "Failed to extract ID from GID: #{gid}"
       nil
     end
   end
-end 
+end

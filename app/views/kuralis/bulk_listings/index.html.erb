@@ -13,6 +13,40 @@
     </div>
   </div>
 
+  <% if @active_job_run.present? %>
+    <div class="alert alert-info mb-4">
+      <h5><i class="bi bi-arrow-repeat me-2"></i> Bulk Listing in Progress</h5>
+      <p>There's currently a bulk listing operation in progress (Job #<%= @active_job_run.job_id %>).</p>
+      
+      <% platforms = @active_job_run.arguments["platforms"] || [] %>
+      <% batch_index = @active_job_run.arguments["batch_index"] || 0 %>
+      <% total_batches = @active_job_run.arguments["total_batches"] || 1 %>
+      <% percent_complete = ((batch_index.to_f / total_batches) * 100).round %>
+      
+      <div class="mb-2">
+        <strong>Platforms:</strong> <%= platforms.map(&:titleize).join(", ") %>
+        <div class="mb-2">
+          <strong>Progress:</strong> 
+          Processing batch <%= batch_index + 1 %> of <%= total_batches %>
+          
+          <div class="progress" style="height: 10px;">
+            <div class="progress-bar" 
+                 role="progressbar" 
+                 style="width: <%= percent_complete %>%;" 
+                 aria-valuenow="<%= batch_index %>" 
+                 aria-valuemin="0" 
+                 aria-valuemax="<%= total_batches %>">
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <p class="text-muted mb-0">Started <%= time_ago_in_words(@active_job_run.created_at) %> ago</p>
+      
+      <%= link_to "View Job Details", kuralis_jobs_path(id: @active_job_run.job_id), class: "btn btn-sm btn-outline-primary mt-2" %>
+    </div>
+  <% end %>
+
   <%= form_tag kuralis_bulk_listings_path, 
       method: :post, 
       class: 'bulk-listing-form',
