@@ -154,13 +154,8 @@ module Shopify
     end
 
     def generate_image_url(image)
-      if Rails.env.production?
-        Rails.logger.info "Generating image URL for #{image.id} in production"
+        Rails.logger.info "Generating image URL for #{image.id}"
         Rails.application.routes.url_helpers.url_for(image)
-      else
-        Rails.logger.info "Generating image URL for #{image.id} in development"
-        image.blob.url(expires_in: 1.hour)
-      end
     end
 
     def prepare_product_images
