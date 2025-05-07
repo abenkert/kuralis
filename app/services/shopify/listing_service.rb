@@ -45,10 +45,14 @@ module Shopify
         }
       }
 
+      p product_variables
+
       product_response = @client.query(
         query: build_create_product_mutation,
         variables: product_variables
       )
+
+      p product_response.body
 
       # If successful, create the ShopifyProduct record
       if product_response.body["data"] && product_response.body["data"]["productSet"] && product_response.body["data"]["productSet"]["product"]
@@ -151,8 +155,10 @@ module Shopify
 
     def generate_image_url(image)
       if Rails.env.production?
+        Rails.logger.info "Generating image URL for #{image.id} in production"
         Rails.application.routes.url_helpers.url_for(image)
       else
+        Rails.logger.info "Generating image URL for #{image.id} in development"
         image.blob.url(expires_in: 1.hour)
       end
     end
