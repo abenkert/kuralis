@@ -1,4 +1,4 @@
-# Test script for Shopify rate limiting
+# Test script for Shopify bulk listing (rate limiting)
 # Run this in the Rails console with:
 # load 'test_shopify_rate_limit.rb'
 # Then call:
@@ -49,13 +49,14 @@ def test_shopify_rate_limit(product_count: 25, shop_id: nil)
   # Run in debug mode with fewer products
   puts "Starting test with #{product_ids.size} products..."
 
-  # Queue the job
-  job = Shopify::BatchCreateListingsJob.perform_later(
+  # Queue the job using BulkListingJob (like the UI)
+  job = BulkListingJob.perform_later(
     shop_id: shop_id,
-    product_ids: product_ids
+    product_ids: product_ids,
+    platforms: [ "shopify" ]
   )
 
-  puts "Job #{job.job_id} queued successfully!"
+  puts "Job #{job.job_id} queued successfully! (BulkListingJob)"
   puts "You can monitor this job with:"
   puts "JobRun.find_by(job_id: '#{job.job_id}')"
 
@@ -64,6 +65,7 @@ def test_shopify_rate_limit(product_count: 25, shop_id: nil)
 end
 
 # Alternative method: force a rate limit by running multiple jobs in parallel
+# (still uses BulkListingJob for each batch)
 def force_rate_limit_test(shop_id: nil, batch_size: 10, batch_count: 3)
   # Find a valid shop if not provided
   unless shop_id
@@ -92,15 +94,16 @@ def force_rate_limit_test(shop_id: nil, batch_size: 10, batch_count: 3)
 
   puts "Starting #{batch_count} jobs with #{batch_size} products each to force rate limiting..."
 
-  # Queue multiple jobs to intentionally hit rate limits
+  # Queue multiple jobs using BulkListingJob
   jobs = []
   product_batches.each do |batch_ids|
-    job = Shopify::BatchCreateListingsJob.perform_later(
+    job = BulkListingJob.perform_later(
       shop_id: shop_id,
-      product_ids: batch_ids
+      product_ids: batch_ids,
+      platforms: [ "shopify" ]
     )
     jobs << job
-    puts "Job #{job.job_id} queued with #{batch_ids.size} products"
+    puts "Job #{job.job_id} queued with #{batch_ids.size} products (BulkListingJob)"
   end
 
   puts "\nYou can monitor these jobs with:"
@@ -116,6 +119,6 @@ def force_rate_limit_test(shop_id: nil, batch_size: 10, batch_count: 3)
 end
 
 puts "Test methods loaded! Run one of these:"
-puts "- test_shopify_rate_limit     # Basic test with default settings"
-puts "- test_shopify_rate_limit(product_count: 40)  # Test with 40 products"
-puts "- force_rate_limit_test       # Run multiple jobs in parallel to force rate limiting"
+puts "- test_shopify_rate_limit     # Basic test with default settings (BulkListingJob)"
+puts "- test_shopify_rate_limit(product_count: 40)  # Test with 40 products (BulkListingJob)"
+puts "- force_rate_limit_test       # Run multiple jobs in parallel to force rate limiting (BulkListingJob)"

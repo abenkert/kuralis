@@ -1,3 +1,5 @@
+require "redlock"
+
 module Shopify
   class BatchCreateListingsJob < ApplicationJob
     queue_as :shopify
@@ -17,6 +19,7 @@ module Shopify
       product_ids.each_slice(BATCH_SIZE).with_index do |batch_ids, batch_index|
         batch_ids.each do |product_id|
           begin
+            Rails.logger.info "[ShopifyBatch] Attempting to create Shopify listing for product #{product_id}"
             product = KuralisProduct.find(product_id)
             service = Shopify::ListingService.new(product)
             response = service.create_listing
@@ -28,41 +31,51 @@ module Shopify
               restore_rate = cost_info["restoreRate"]
               actual_query_cost = response.body.dig("extensions", "cost", "actualQueryCost")
 
-              Rails.logger.info "Shopify rate limit: #{currently_available} available, restore rate: #{restore_rate}, last query cost: #{actual_query_cost}"
+              Rails.logger.info "[ShopifyBatch] Rate limit: #{currently_available} available, restore rate: #{restore_rate}, last query cost: #{actual_query_cost}"
 
               if currently_available < RATE_LIMIT_BUFFER
                 points_needed = RATE_LIMIT_BUFFER - currently_available
                 wait_seconds = (points_needed.to_f / restore_rate).ceil
-                Rails.logger.info "Waiting #{wait_seconds}s for Shopify rate limit to restore"
+                Rails.logger.info "[ShopifyBatch] Waiting #{wait_seconds}s for Shopify rate limit to restore"
                 sleep(wait_seconds)
               end
             end
 
-            # Check for errors in the response
+            # Enhanced error handling
+            top_level_errors = response.body["errors"]
             user_errors = response.body.dig("data", "productSet", "userErrors")
-            if user_errors.present? && user_errors.any?
-              Rails.logger.error "Shopify user errors: #{user_errors.inspect}"
+            product_data = response.body.dig("data", "productSet", "product")
+
+            if top_level_errors.present?
+              Rails.logger.error "[ShopifyBatch] Top-level Shopify errors for product #{product_id}: #{top_level_errors.inspect} | Response: #{response.body.inspect}"
+              failed += 1
+            elsif user_errors.present? && user_errors.any?
+              Rails.logger.error "[ShopifyBatch] Shopify user errors for product #{product_id}: #{user_errors.inspect} | Response: #{response.body.inspect}"
+              failed += 1
+            elsif product_data.nil?
+              Rails.logger.error "[ShopifyBatch] No product returned for product #{product_id} and no user errors. Full response: #{response.body.inspect}"
               failed += 1
             else
+              Rails.logger.info "[ShopifyBatch] Successfully created Shopify listing for product #{product_id}"
               successful += 1
             end
 
           rescue => e
             # If we get a throttle error, back off and retry
             if e.message.include?("rate limit") || e.message.include?("throttled")
-              Rails.logger.warn "Hit Shopify rate limit, backing off"
+              Rails.logger.warn "[ShopifyBatch] Hit Shopify rate limit for product #{product_id}, backing off"
               sleep(30)
               retry
             else
               failed += 1
-              Rails.logger.error "Failed to create Shopify listing for product #{product_id}: #{e.message}"
+              Rails.logger.error "[ShopifyBatch] Exception for product #{product_id}: #{e.class} - #{e.message}\n#{e.backtrace.first(10).join("\n")}"
             end
           end
         end
 
         # Pause between batches to avoid overwhelming the API
         if batch_index < (product_ids.size.to_f / BATCH_SIZE).ceil - 1
-          Rails.logger.info "Completed batch #{batch_index + 1}, waiting before starting next batch"
+          Rails.logger.info "[ShopifyBatch] Completed batch #{batch_index + 1}, waiting before starting next batch"
           sleep(5)
         end
       end
