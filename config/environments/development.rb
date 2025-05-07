@@ -16,7 +16,10 @@ Rails.application.configure do
 
   # Show full error reports.
   config.consider_all_requests_local = true
-
+  config.active_storage.resolve_model_to_route = :public
+  config.active_storage.url_options = {
+    host: "https://d3hbmuj9qy2g6c.cloudfront.net" # or your custom domain
+  }
   # Enable server timing.
   config.server_timing = true
 
@@ -43,7 +46,7 @@ Rails.application.configure do
   config.action_mailer.perform_caching = false
 
   # Set localhost to be used by links generated in mailer templates.
-  config.action_mailer.default_url_options = { host: 'localhost', port: 3000 }
+  config.action_mailer.default_url_options = { host: "localhost", port: 3000 }
 
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
@@ -85,6 +88,6 @@ Rails.application.configure do
   # Set your application's domain name
   # Rails.application.routes.default_url_options[:host] = 'kuralis.com'
   # config.action_mailer.default_url_options = { host: 'kuralis.com' }
-  Rails.application.routes.default_url_options[:host] = 'heroic-wahoo-new.ngrok-free.app'
-  config.action_mailer.default_url_options = { host: 'heroic-wahoo-new.ngrok-free.app' }
+  Rails.application.routes.default_url_options[:host] = "heroic-wahoo-new.ngrok-free.app"
+  config.action_mailer.default_url_options = { host: "heroic-wahoo-new.ngrok-free.app" }
 end
