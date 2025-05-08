@@ -1,5 +1,3 @@
-require "redlock"
-
 module Shopify
   class BatchCreateListingsJob < ApplicationJob
     queue_as :shopify

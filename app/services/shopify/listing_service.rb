@@ -159,11 +159,13 @@ module Shopify
     end
 
     def prepare_product_images
+      staged_upload_service = Shopify::StagedUploadService.new(@shop)
       @product.images.map do |image|
+        resource_url = staged_upload_service.upload_image(image)
         {
           "contentType": "IMAGE",
           "alt": @product.title,
-          "originalSource": generate_image_url(image)
+          "originalSource": resource_url
         }
       end
     end

@@ -73,7 +73,7 @@ gem 'bootstrap', '~> 5.3.0'
 gem 'sassc-rails'
 gem 'sidekiq'
 gem 'redis'
-gem 'redlock'
+gem 'multipart-post'
 gem 'cgi'
 gem 'nokogiri'
 
