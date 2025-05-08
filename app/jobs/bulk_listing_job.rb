@@ -19,17 +19,21 @@ class BulkListingJob < ApplicationJob
     Array(platforms).each do |platform|
       case platform
       when "shopify"
-        Shopify::BatchCreateListingsJob.perform_later(
-          shop_id: shop.id,
-          product_ids: product_ids
-        )
-        Rails.logger.info "Queued #{product_ids.size} products for Shopify listing (single batch job)"
+        product_ids.each_slice(BATCH_SIZE).with_index do |batch_ids, batch_index|
+          Shopify::BatchCreateListingsJob.perform_later(
+            shop_id: shop.id,
+            product_ids: batch_ids
+          )
+          Rails.logger.info "Queued batch \\#{batch_index + 1} (\\#{batch_ids.size} products) for Shopify listing."
+        end
       when "ebay"
-        Ebay::BatchCreateListingsJob.perform_later(
-          shop_id: shop.id,
-          product_ids: product_ids
-        )
-        Rails.logger.info "Queued #{product_ids.size} products for eBay listing (single batch job)"
+        product_ids.each_slice(BATCH_SIZE).with_index do |batch_ids, batch_index|
+          Ebay::BatchCreateListingsJob.perform_later(
+            shop_id: shop.id,
+            product_ids: batch_ids
+          )
+          Rails.logger.info "Queued batch \\#{batch_index + 1} (\\#{batch_ids.size} products) for eBay listing."
+        end
       end
     end
 

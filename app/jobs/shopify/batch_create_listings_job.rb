@@ -12,6 +12,9 @@ module Shopify
     def perform(shop_id:, product_ids:)
       shop = Shop.find(shop_id)
 
+      # Initialize the rate limiter
+      rate_limiter = Shopify::RateLimiterService.new(shop_id)
+
       # Track success/failure counts
       successful = 0
       failed = 0
@@ -22,10 +25,14 @@ module Shopify
             Rails.logger.info "[ShopifyBatch] Attempting to create Shopify listing for product #{product_id}"
             product = KuralisProduct.find(product_id)
             service = Shopify::ListingService.new(product)
+
+            # Wait for enough points before making the Shopify API call
+            rate_limiter.wait_for_points!(50) # Assume 50 points per call as a safe default
             response = service.create_listing
 
             # Inspect rate limit info from the response
             cost_info = response.body.dig("extensions", "cost", "throttleStatus")
+            rate_limiter.update_from_throttle_status(cost_info)
             if cost_info
               currently_available = cost_info["currentlyAvailable"]
               restore_rate = cost_info["restoreRate"]
