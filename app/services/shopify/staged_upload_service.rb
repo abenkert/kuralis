@@ -49,9 +49,7 @@ module Shopify
       }
 
       response = @client.query(query: query, variables: variables)
-      puts "response: #{response.body}"
       target = response.body.dig("data", "stagedUploadsCreate", "stagedTargets")&.first
-      puts "target: #{target}"
       raise "Failed to get staged upload target: #{response.body}" unless target
 
       # Step 2: Upload to S3

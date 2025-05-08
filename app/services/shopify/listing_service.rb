@@ -45,14 +45,12 @@ module Shopify
         }
       }
 
-      p product_variables
 
       product_response = @client.query(
         query: build_create_product_mutation,
         variables: product_variables
       )
 
-      p product_response.body
 
       # If successful, create the ShopifyProduct record
       if product_response.body["data"] && product_response.body["data"]["productSet"] && product_response.body["data"]["productSet"]["product"]
