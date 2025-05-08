@@ -25,8 +25,9 @@ module Shopify
             service = Shopify::ListingService.new(product)
 
             # Wait for enough points before making the Shopify API call
-            rate_limiter.wait_for_points!(50) # Assume 50 points per call as a safe default
+            rate_limiter.wait_for_points!(60) # Assume 50 points per call as a safe default
             response = service.create_listing
+            next if response == false
 
             # Inspect rate limit info from the response
             cost_info = response.body.dig("extensions", "cost", "throttleStatus")
