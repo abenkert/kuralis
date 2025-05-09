@@ -7,9 +7,9 @@ module Kuralis
       # Query products unlisted on the selected platform
       case @platform
       when "shopify"
-        @products = current_shop.kuralis_products.where(shopify_product_id: nil)
+        @products = current_shop.kuralis_products.where(shopify_product_id: nil, status: "active", is_draft: false)
       when "ebay"
-        @products = current_shop.kuralis_products.where(ebay_listing_id: nil)
+        @products = current_shop.kuralis_products.where(ebay_listing_id: nil, status: "active", is_draft: false)
       when "all"
         # Products unlisted on any platform
         @products = current_shop.kuralis_products.unlinked
@@ -42,12 +42,12 @@ module Kuralis
         product_ids = []
 
         if platform.include?("shopify")
-          shopify_ids = current_shop.kuralis_products.where(shopify_product_id: nil).pluck(:id)
+          shopify_ids = current_shop.kuralis_products.where(shopify_product_id: nil, status: "active", is_draft: false).pluck(:id)
           product_ids = product_ids.empty? ? shopify_ids : product_ids & shopify_ids
         end
 
         if platform.include?("ebay")
-          ebay_ids = current_shop.kuralis_products.where(ebay_listing_id: nil).pluck(:id)
+          ebay_ids = current_shop.kuralis_products.where(ebay_listing_id: nil, status: "active", is_draft: false).pluck(:id)
           product_ids = product_ids.empty? ? ebay_ids : product_ids & ebay_ids
         end
 

@@ -354,7 +354,7 @@ class ImportEbayListingsJob < ApplicationJob
 
     # Fall back to 3 years if we couldn't determine oldest listing
     # TODO: We for some reason can't get the oldest listing date
-    Rails.logger.info("Could not determine oldest listing date, falling back to 3 years ago")
+    Rails.logger.info("Could not determine oldest listing date, falling back to 3 years ago") unless result[:oldest_listing_date] != 3.years.ago
     [ result[:oldest_listing_date], result[:total_listings] ]
   end
 end
