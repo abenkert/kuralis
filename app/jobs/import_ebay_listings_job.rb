@@ -157,11 +157,9 @@ class ImportEbayListingsJob < ApplicationJob
 
         # Use find_or_initialize with the pre-fetched data
         listing = existing_listings[ebay_item_id] || ebay_account.ebay_listings.new(ebay_item_id: ebay_item_id)
-        # Skip completed listings
         # TODO: Add support for completed listings
         # We may want to allow the users to configure this in the settings
         listing_status = item.at_xpath(".//ns:SellingStatus/ns:ListingStatus", namespaces)&.text&.downcase
-        next if listing_status == "completed"
         description = prepare_description(item.at_xpath(".//ns:Description", namespaces)&.text)
         location = find_location(description)
 
@@ -183,7 +181,7 @@ class ImportEbayListingsJob < ApplicationJob
           listing_duration: item.at_xpath(".//ns:ListingDuration", namespaces)&.text,
           end_time: Time.parse(item.at_xpath(".//ns:ListingDetails/ns:EndTime", namespaces)&.text.to_s),
           best_offer_enabled: item.at_xpath(".//ns:BestOfferDetails/ns:BestOfferEnabled", namespaces)&.text == "true",
-          ebay_status: item.at_xpath(".//ns:SellingStatus/ns:ListingStatus", namespaces)&.text&.downcase,
+          ebay_status: listing_status,
           return_profile_id: item.at_xpath(".//ns:SellerProfiles/ns:SellerReturnProfile/ns:ReturnProfileID", namespaces)&.text,
           payment_profile_id: item.at_xpath(".//ns:SellerProfiles/ns:SellerPaymentProfile/ns:PaymentProfileID", namespaces)&.text,
           last_sync_at: Time.current
@@ -353,6 +351,7 @@ class ImportEbayListingsJob < ApplicationJob
     end
 
     # Fall back to 3 years if we couldn't determine oldest listing
+    # TODO: We for some reason can't get the oldest listing date
     Rails.logger.info("Could not determine oldest listing date, falling back to 3 years ago")
     [ result[:oldest_listing_date], result[:total_listings] ]
   end
