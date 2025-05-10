@@ -1,15 +1,18 @@
+require "tempfile"
+
 module Shopify
   class BatchCreateListingsJob < ApplicationJob
+    include HTTParty
     queue_as :shopify
 
-    RATE_LIMIT_BUFFER = 200  # Higher buffer for bulk operations
-    BULK_MUTATION_COST = 100 # Approximate cost for bulk mutation
     POLL_INTERVAL = 5.seconds # How often to check bulk operation status
     MAX_RETRIES = 3
+    BATCH_SIZE = 250 # Maximum number of images per bulk upload
 
     def perform(shop_id:, product_ids:, batch_index:, total_batches:)
       @shop = Shop.find(shop_id)
-      @rate_limiter = Shopify::RateLimiterService.new(shop_id)
+      @client = ShopifyAPI::Clients::Graphql::Admin.new(session: @shop.shopify_session)
+      @rest_client = ShopifyAPI::Clients::Rest::Admin.new(session: @shop.shopify_session)
       @batch_index = batch_index
       @total_batches = total_batches
       @retries = 0
@@ -22,31 +25,16 @@ module Shopify
     private
 
     def process_batch(product_ids)
-      # Prepare products for bulk operation
+      # Prepare products for bulk operation using ListingService
       products_data = prepare_products_data(product_ids)
-
-      # Wait for sufficient rate limit points
-      @rate_limiter.wait_for_points!(BULK_MUTATION_COST)
 
       # Start bulk operation
       bulk_operation = create_bulk_operation(products_data)
 
       if bulk_operation
-        monitor_bulk_operation(bulk_operation)
-        process_bulk_operation_results(bulk_operation)
+        monitor_then_process_bulk_operation(bulk_operation, product_ids)
       else
-        handle_bulk_operation_failure(product_ids)
-      end
-    rescue Shopify::RateLimiterService::RateLimitError => e
-      Rails.logger.error "[ShopifyBatch] Rate limit exceeded: #{e.message}"
-      if @retries < MAX_RETRIES
-        @retries += 1
-        wait_time = (2 ** @retries) + rand(10)
-        Rails.logger.info "[ShopifyBatch] Retry #{@retries}/#{MAX_RETRIES} after #{wait_time}s"
-        sleep wait_time
-        retry
-      else
-        handle_batch_failure("Max retries exceeded")
+        handle_batch_failure("Failed to create bulk operation")
       end
     rescue => e
       Rails.logger.error "[ShopifyBatch] Unexpected error: #{e.class} - #{e.message}\n#{e.backtrace.first(10).join("\n")}"
@@ -57,84 +45,76 @@ module Shopify
       products_data = []
       product_ids.each do |id|
         product = KuralisProduct.find(id)
-        products_data << build_product_data(product)
+        next if product.shopify_product.present?
+
+        # Use ListingService to prepare product data
+        service = Shopify::ListingService.new(product)
+        products_data << {
+          synchronous: true,
+          productSet: {
+            title: product.title,
+            descriptionHtml: service.build_item_description,
+            tags: product.tags,
+            files: service.prepare_product_images,
+            productOptions: [
+              {
+                name: "Title",
+                position: 1,
+                values: [ { name: "Default Title" } ]
+              }
+            ],
+            variants: [
+              {
+                optionValues: [ { optionName: "Title", name: "Default Title" } ],
+                inventoryItem: {
+                  tracked: true,
+                  measurement: {
+                    weight: { unit: "OUNCES", value: product.weight_oz.to_f }
+                  }
+                },
+                inventoryQuantities: [
+                  { locationId: @shop.default_location_id, name: "available", quantity: product.base_quantity }
+                ],
+                price: product.base_price
+              }
+            ]
+          }
+        }
       end
       products_data
     end
 
-    def build_product_data(product)
-      # Transform your product data into Shopify's expected format
-      {
-        title: product.title,
-        description: product.description,
-        variants: product.variants.map { |v| build_variant_data(v) },
-        images: product.images.map { |i| build_image_data(i) }
-        # Add other necessary product fields
-      }
-    end
-
     def create_bulk_operation(products_data)
-      mutation = build_bulk_mutation(products_data)
-      response = ShopifyAPI::GraphQL.client.execute(mutation)
+      # Convert products data to JSONL format
+      jsonl_data = products_data.map(&:to_json).join("\n")
 
-      if response.data&.bulk_operation_run_mutation&.bulk_operation
-        response.data.bulk_operation_run_mutation.bulk_operation
-      else
-        Rails.logger.error "[ShopifyBatch] Failed to create bulk operation: #{response.errors.inspect}"
-        nil
-      end
-    end
+      # Create staged upload for the JSONL file
+      staged_upload = create_staged_upload(jsonl_data)
+      return nil unless staged_upload
 
-    def monitor_bulk_operation(operation)
-      loop do
-        status = check_bulk_operation_status(operation.id)
-        break if status.completed? || status.failed?
+      # Extract the path from the key parameter
+      upload_path = staged_upload["parameters"].find { |p| p["name"] == "key" }&.dig("value")
+      return nil unless upload_path
 
-        sleep POLL_INTERVAL
-      end
-    end
-
-    def process_bulk_operation_results(operation)
-      results = fetch_bulk_operation_results(operation)
-
-      successful = results.count { |r| r.success? }
-      failed = results.count { |r| !r.success? }
-
-      NotificationService.create(
-        shop: @shop,
-        title: "Shopify Batch #{@batch_index + 1} Complete",
-        message: "Processed #{results.size} products: #{successful} successful, #{failed} failed.",
-        category: "bulk_listing",
-        status: failed > 0 ? "warning" : "success"
-      )
-
-      # Log any failures for investigation
-      results.reject(&:success?).each do |result|
-        Rails.logger.error "[ShopifyBatch] Product creation failed: #{result.errors.inspect}"
-      end
-    end
-
-    def handle_batch_failure(error)
-      NotificationService.create(
-        shop: @shop,
-        title: "Shopify Batch #{@batch_index + 1} Failed",
-        message: "Batch failed: #{error}. Please check logs for details.",
-        category: "bulk_listing",
-        status: "error"
-      )
-    end
-
-    def build_bulk_mutation(products_data)
-      <<~GQL
+      mutation = <<~GQL
         mutation {
           bulkOperationRunMutation(
             mutation: """
-              mutation createProducts($input: ProductInput!) {
-                productCreate(input: $input) {
+              mutation createProduct($productSet: ProductSetInput!, $synchronous: Boolean!) {
+                productSet(synchronous: $synchronous, input: $productSet) {
                   product {
                     id
-                    title
                     handle
+                    variants(first: 1) {
+                      nodes {
+                        title
+                        price
+                        inventoryQuantity
+                        inventoryItem {
+                          id
+                        }
+                      }
+                    }
                   }
                   userErrors {
                     field
@@ -143,7 +123,7 @@ module Shopify
                 }
               }
             """,
-            stagedUploadPath: #{staged_uploads_path(products_data)}
+            stagedUploadPath: "#{upload_path}"
           ) {
             bulkOperation {
               id
@@ -156,19 +136,16 @@ module Shopify
           }
         }
       GQL
-    end
 
-    def staged_uploads_path(products_data)
-      # Convert products data to JSONL format
-      jsonl_data = products_data.map do |product|
-        {
-          input: product
-        }.to_json
-      end.join("\n")
+      response = @client.query(query: mutation)
+      Rails.logger.info "[ShopifyBatch] Bulk operation response: #{response.body}"
 
-      # Upload to Shopify's staged uploads
-      staged_upload = create_staged_upload(jsonl_data)
-      staged_upload.path
+      if response.body["data"]&.dig("bulkOperationRunMutation", "bulkOperation")
+        response.body["data"]["bulkOperationRunMutation"]["bulkOperation"]
+      else
+        Rails.logger.error "[ShopifyBatch] Failed to create bulk operation: #{response.body["errors"].inspect}"
+        nil
+      end
     end
 
     def create_staged_upload(data)
@@ -200,30 +177,49 @@ module Shopify
         } ]
       }
 
-      response = ShopifyAPI::GraphQL.client.execute(mutation, variables: variables)
-      upload_to_url(response.data.staged_uploads_create.staged_targets.first, data)
-      response.data.staged_uploads_create.staged_targets.first
+      response = @client.query(
+        query: mutation,
+        variables: variables
+      )
+
+      staged_target = response.body["data"]["stagedUploadsCreate"]["stagedTargets"].first
+      return nil unless staged_target
+
+      # Upload the file
+      success = upload_to_url(staged_target, data)
+      success ? staged_target : nil
     end
 
-    def build_variant_data(variant)
-      {
-        price: variant.price,
-        sku: variant.sku,
-        inventoryQuantity: variant.quantity,
-        weight: variant.weight,
-        weightUnit: variant.weight_unit.upcase,
-        option1: variant.option1,
-        option2: variant.option2,
-        option3: variant.option3,
-        inventoryManagement: "SHOPIFY"
-      }.compact
-    end
+    def monitor_then_process_bulk_operation(operation, product_ids)
+      loop do
+        status = check_bulk_operation_status(operation["id"])
+        Rails.logger.info "[ShopifyBatch] Bulk operation status: #{status}"
 
-    def build_image_data(image)
-      {
-        src: image.url,
-        altText: image.alt_text
-      }.compact
+        case status["status"]
+        when "COMPLETED"
+          Rails.logger.info "[ShopifyBatch] Bulk operation completed, processing results"
+          if status["url"]
+            # Download and process the JSONL file
+            response = HTTParty.get(status["url"])
+            if response.success?
+              process_bulk_operation_results(response.body, product_ids)
+            else
+              Rails.logger.error "[ShopifyBatch] Failed to download bulk operation results: #{response.code}"
+              handle_batch_failure("Failed to download bulk operation results")
+            end
+          else
+            Rails.logger.error "[ShopifyBatch] No URL provided in completed bulk operation"
+            handle_batch_failure("No URL provided in completed bulk operation")
+          end
+          break
+        when "FAILED"
+          Rails.logger.error "[ShopifyBatch] Bulk operation failed: #{status["errorCode"]}"
+          handle_batch_failure("Bulk operation failed: #{status["errorCode"]}")
+          break
+        else
+          sleep POLL_INTERVAL
+        end
+      end
     end
 
     def check_bulk_operation_status(operation_id)
@@ -245,39 +241,258 @@ module Shopify
         }
       GQL
 
-      response = ShopifyAPI::GraphQL.client.execute(query)
-      response.data.node
+      response = @client.query(query: query)
+      response.body["data"]["node"]
     end
 
-    def fetch_bulk_operation_results(operation)
-      return [] unless operation.url
-
-      # Download and parse the JSONL results
-      response = HTTP.get(operation.url)
+    def process_bulk_operation_results(jsonl_data, product_ids)
+      Rails.logger.info "[ShopifyBatch] Processing bulk operation results"
       results = []
+      products_with_images = []
 
-      response.body.each_line do |line|
+      jsonl_data.each_line do |line|
         result = JSON.parse(line)
-        results << OpenStruct.new(
-          success?: !result["userErrors"]&.any?,
-          errors: result["userErrors"],
-          product_id: result.dig("data", "productCreate", "product", "id")
-        )
+        Rails.logger.info "[ShopifyBatch] Processing result line: #{result}"
+
+        if result["data"] && result["data"]["productSet"] && result["data"]["productSet"]["product"]
+          product_data = result["data"]["productSet"]["product"]
+          variant_data = product_data["variants"]["nodes"].first
+
+          # Create ShopifyProduct record using the same logic as ListingService
+          product = KuralisProduct.find(product_ids[results.size])
+
+          product_id = product_data["id"].split("/").last
+          handle = product_data["handle"]
+          variant_id = variant_data["inventoryItem"]["id"].split("/").last
+
+          shopify_product = product.create_shopify_product!(
+            shop: @shop,
+            shopify_product_id: product_id,
+            shopify_variant_id: variant_id,
+            handle: handle,
+            title: product.title,
+            description: product.description,
+            price: product.base_price,
+            quantity: product.base_quantity,
+            inventory_location: product.location,
+            tags: product.tags,
+            sku: product.sku,
+            status: "active",
+            published: true
+          )
+
+          # Copy images from kuralis_product to shopify_product
+          if product.images.attached?
+            product.images.each do |image|
+              image.blob.open do |tempfile|
+                shopify_product.images.attach(
+                  io: tempfile,
+                  filename: image.filename.to_s,
+                  content_type: image.content_type,
+                  identify: false
+                )
+              end
+            end
+          end
+
+          # Add to products needing image upload to Shopify
+          if product.images.attached?
+            products_with_images << {
+              product: product,
+              shopify_product: shopify_product,
+              shopify_product_id: product_id
+            }
+          end
+
+          results << OpenStruct.new(success?: true)
+        else
+          Rails.logger.error "[ShopifyBatch] Invalid result format: #{result}"
+          results << OpenStruct.new(
+            success?: false,
+            errors: result["data"]&.dig("productSet", "userErrors") || result["errors"]
+          )
+        end
       end
 
-      results
+      # Process images in bulk using GraphQL
+      # process_images_with_graphql(products_with_images) if products_with_images.any?
+
+      successful = results.count(&:success?)
+      failed = results.count { |r| !r.success? }
+
+      NotificationService.create(
+        shop: @shop,
+        title: "Shopify Batch #{@batch_index + 1}/#{@total_batches} Complete",
+        message: "Processed #{results.size} products: #{successful} successful, #{failed} failed.",
+        category: "bulk_listing",
+        status: failed > 0 ? "warning" : "success"
+      )
+
+      # Log any failures for investigation
+      results.reject(&:success?).each do |result|
+        Rails.logger.error "[ShopifyBatch] Product creation failed: #{result.errors.inspect}"
+      end
+    end
+
+    def process_images_with_graphql(products_with_images)
+      products_with_images.each_slice(10) do |batch|
+        batch.each do |product_data|
+          product = product_data[:product]
+          shopify_product_id = product_data[:shopify_product_id]
+
+          product.images.each do |image|
+            begin
+              # First, create a staged upload
+              staged_upload_result = @client.query(
+                query: build_staged_upload_mutation,
+                variables: {
+                  input: {
+                    resource: "PRODUCT_IMAGE",
+                    filename: image.filename.to_s,
+                    mimeType: image.content_type,
+                    httpMethod: "POST"
+                  }
+                }
+              )
+
+              if staged_upload_result.body["data"] && staged_upload_result.body["data"]["stagedUploadsCreate"]
+                staged_target = staged_upload_result.body["data"]["stagedUploadsCreate"]["stagedTargets"].first
+
+                # Convert parameters array to hash
+                upload_params = staged_target["parameters"].each_with_object({}) do |param, hash|
+                  hash[param["name"]] = param["value"]
+                end
+
+                # Upload the file to the staged upload URL
+                image.blob.open do |file|
+                  upload_response = HTTParty.post(
+                    staged_target["url"],
+                    multipart: true,
+                    body: upload_params.merge("file" => file)
+                  )
+
+                  if upload_response.success?
+                    # Create the media on the product
+                    response = @client.query(
+                      query: build_create_media_mutation,
+                      variables: {
+                        productId: "gid://shopify/Product/#{shopify_product_id}",
+                        media: [ {
+                          mediaContentType: "IMAGE",
+                          originalSource: staged_target["resourceUrl"],
+                          alt: product.title
+                        } ]
+                      }
+                    )
+                    Rails.logger.info "[ShopifyBatch] Media creation response: #{response.body}"
+                    Rails.logger.info "[ShopifyBatch] Successfully uploaded image for product #{shopify_product_id}"
+                  else
+                    Rails.logger.error "[ShopifyBatch] Failed to upload image to staged URL for product #{shopify_product_id}: #{upload_response.code} - #{upload_response.body}"
+                  end
+                end
+              else
+                Rails.logger.error "[ShopifyBatch] Failed to create staged upload for product #{shopify_product_id}"
+              end
+            rescue => e
+              Rails.logger.error "[ShopifyBatch] Failed to upload image for product #{shopify_product_id}: #{e.message}"
+              Rails.logger.error e.backtrace.first(5).join("\n")
+            end
+          end
+        end
+
+        # Add a small delay between batches to avoid rate limits
+        sleep(1)
+      end
+    end
+
+    def build_staged_upload_mutation
+      <<~GQL
+        mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+          stagedUploadsCreate(input: $input) {
+            stagedTargets {
+              url
+              resourceUrl
+              parameters {
+                name
+                value
+              }
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      GQL
+    end
+
+    def build_create_media_mutation
+      <<~GQL
+        mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+          productCreateMedia(productId: $productId, media: $media) {
+            media {
+              ... on MediaImage {
+                id
+                image {
+                  url
+                }
+              }
+            }
+            mediaUserErrors {
+              field
+              message
+            }
+          }
+        }
+      GQL
     end
 
     def upload_to_url(staged_target, data)
-      uri = URI.parse(staged_target.url)
+      uri = URI.parse(staged_target["url"])
 
       # Prepare parameters from staged target
-      params = staged_target.parameters.each_with_object({}) do |param, hash|
-        hash[param.name] = param.value
+      params = staged_target["parameters"].each_with_object({}) do |param, hash|
+        hash[param["name"]] = param["value"]
       end
 
-      # Upload the file
-      HTTP.post(uri, form: params.merge(file: HTTP::FormData::File.new(StringIO.new(data))))
+      # Create a temporary file for the upload
+      file = Tempfile.new([ "products", ".jsonl" ])
+      begin
+        file.write(data)
+        file.rewind
+
+        # Upload the file using HTTParty
+        response = self.class.post(
+          uri.to_s,
+          multipart: true,
+          body: params.merge(
+            file: File.open(file.path)
+          )
+        )
+
+        if response.success?
+          true
+        else
+          Rails.logger.error "[ShopifyBatch] Failed to upload file: #{response.code} - #{response.body}"
+          false
+        end
+      ensure
+        file.close
+        file.unlink
+      end
+    rescue => e
+      Rails.logger.error "[ShopifyBatch] Error uploading file: #{e.message}"
+      false
+    end
+
+    def handle_batch_failure(error)
+      NotificationService.create(
+        shop: @shop,
+        title: "Shopify Batch #{@batch_index + 1} Failed",
+        message: "Batch failed: #{error}. Please check logs for details.",
+        category: "bulk_listing",
+        status: "error"
+      )
     end
   end
 end

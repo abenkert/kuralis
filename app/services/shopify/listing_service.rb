@@ -108,8 +108,6 @@ module Shopify
       description
     end
 
-    private
-
     def build_create_product_mutation
       # language=GraphQL
       <<~GQL
