@@ -148,7 +148,9 @@ module Shopify
       end
     end
 
-    def create_staged_upload(data)
+    def create_staged_upload(data, type = "bulk_operation")
+      filename = type == "media_creation" ? "media_creation.jsonl" : "products.jsonl"
+
       mutation = <<~GQL
         mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
           stagedUploadsCreate(input: $input) {
@@ -171,7 +173,7 @@ module Shopify
       variables = {
         input: [ {
           resource: "BULK_MUTATION_VARIABLES",
-          filename: "products_#{@batch_index}.jsonl",
+          filename: filename,
           mimeType: "text/jsonl",
           httpMethod: "POST"
         } ]
@@ -315,7 +317,7 @@ module Shopify
       end
 
       # Process images in bulk using GraphQL
-      # process_images_with_graphql(products_with_images) if products_with_images.any?
+      process_images_with_graphql(products_with_images) if products_with_images.any?
 
       successful = results.count(&:success?)
       failed = results.count { |r| !r.success? }
@@ -335,73 +337,200 @@ module Shopify
     end
 
     def process_images_with_graphql(products_with_images)
-      products_with_images.each_slice(10) do |batch|
-        batch.each do |product_data|
+      Rails.logger.info "[ShopifyBatch] Starting batch image upload for #{products_with_images.size} products"
+
+      # Group products into batches of 10 for processing
+      products_with_images.each_slice(10) do |product_batch|
+        # Collect all images that need uploads
+        image_uploads = []
+
+        # Map of image ID to product/image data for post-upload processing
+        image_mapping = {}
+
+        # Prepare all staged upload inputs in a batch
+        staged_upload_inputs = []
+
+        product_batch.each do |product_data|
           product = product_data[:product]
           shopify_product_id = product_data[:shopify_product_id]
 
-          product.images.each do |image|
-            begin
-              # First, create a staged upload
-              staged_upload_result = @client.query(
-                query: build_staged_upload_mutation,
-                variables: {
-                  input: {
-                    resource: "PRODUCT_IMAGE",
-                    filename: image.filename.to_s,
-                    mimeType: image.content_type,
-                    httpMethod: "POST"
-                  }
-                }
-              )
+          product.images.each_with_index do |image, index|
+            # Create a unique ID for tracking this image
+            image_id = "#{shopify_product_id}_#{index}"
 
-              if staged_upload_result.body["data"] && staged_upload_result.body["data"]["stagedUploadsCreate"]
-                staged_target = staged_upload_result.body["data"]["stagedUploadsCreate"]["stagedTargets"].first
+            # Store the relationship between image ID and product data
+            image_mapping[image_id] = {
+              product: product,
+              image: image,
+              shopify_product_id: shopify_product_id
+            }
 
-                # Convert parameters array to hash
-                upload_params = staged_target["parameters"].each_with_object({}) do |param, hash|
-                  hash[param["name"]] = param["value"]
-                end
-
-                # Upload the file to the staged upload URL
-                image.blob.open do |file|
-                  upload_response = HTTParty.post(
-                    staged_target["url"],
-                    multipart: true,
-                    body: upload_params.merge("file" => file)
-                  )
-
-                  if upload_response.success?
-                    # Create the media on the product
-                    response = @client.query(
-                      query: build_create_media_mutation,
-                      variables: {
-                        productId: "gid://shopify/Product/#{shopify_product_id}",
-                        media: [ {
-                          mediaContentType: "IMAGE",
-                          originalSource: staged_target["resourceUrl"],
-                          alt: product.title
-                        } ]
-                      }
-                    )
-                    Rails.logger.info "[ShopifyBatch] Media creation response: #{response.body}"
-                    Rails.logger.info "[ShopifyBatch] Successfully uploaded image for product #{shopify_product_id}"
-                  else
-                    Rails.logger.error "[ShopifyBatch] Failed to upload image to staged URL for product #{shopify_product_id}: #{upload_response.code} - #{upload_response.body}"
-                  end
-                end
-              else
-                Rails.logger.error "[ShopifyBatch] Failed to create staged upload for product #{shopify_product_id}"
-              end
-            rescue => e
-              Rails.logger.error "[ShopifyBatch] Failed to upload image for product #{shopify_product_id}: #{e.message}"
-              Rails.logger.error e.backtrace.first(5).join("\n")
-            end
+            # Add to the batch of staged upload inputs
+            staged_upload_inputs << {
+              resource: "PRODUCT_IMAGE",
+              filename: image.filename.to_s,
+              mimeType: image.content_type,
+              httpMethod: "POST"
+            }
           end
         end
 
-        # Add a small delay between batches to avoid rate limits
+        # Skip if no images to upload
+        next if staged_upload_inputs.empty?
+
+        begin
+          # Create all staged uploads in a single API call
+          Rails.logger.info "[ShopifyBatch] Creating #{staged_upload_inputs.size} staged uploads in one API call"
+          staged_upload_result = @client.query(
+            query: build_staged_upload_mutation,
+            variables: {
+              input: staged_upload_inputs
+            }
+          )
+
+          if staged_upload_result.body["data"] && staged_upload_result.body["data"]["stagedUploadsCreate"]
+            staged_targets = staged_upload_result.body["data"]["stagedUploadsCreate"]["stagedTargets"]
+
+            # Process each staged target (should match the order of our inputs)
+            staged_targets.each_with_index do |staged_target, index|
+              # Get the image ID for this staged target
+              image_id = image_mapping.keys[index]
+              image_data = image_mapping[image_id]
+
+              next unless image_data
+
+              # Convert parameters array to hash
+              upload_params = staged_target["parameters"].each_with_object({}) do |param, hash|
+                hash[param["name"]] = param["value"]
+              end
+
+              # Upload the file to the staged URL
+              image_data[:image].blob.open do |file|
+                upload_response = HTTParty.post(
+                  staged_target["url"],
+                  multipart: true,
+                  body: upload_params.merge("file" => file)
+                )
+
+                if upload_response.success?
+                  # Store for media creation
+                  image_uploads << {
+                    product_id: image_data[:shopify_product_id],
+                    resource_url: staged_target["resourceUrl"],
+                    image_alt: image_data[:product].title
+                  }
+                else
+                  Rails.logger.error "[ShopifyBatch] Failed to upload image to staged URL for product #{image_data[:shopify_product_id]}: #{upload_response.code} - #{upload_response.body}"
+                end
+              end
+            end
+
+            # Now create media for all successfully uploaded images using a bulk operation
+            if image_uploads.any?
+              create_media_bulk_operation(image_uploads)
+            end
+          else
+            Rails.logger.error "[ShopifyBatch] Failed to create staged uploads: #{staged_upload_result.body["errors"]}"
+          end
+        rescue => e
+          Rails.logger.error "[ShopifyBatch] Error during batch image upload: #{e.message}"
+          Rails.logger.error e.backtrace.first(5).join("\n")
+        end
+
+        # Add a small delay between batches
         sleep(1)
+      end
+    end
+
+    def create_media_bulk_operation(image_uploads)
+      # Convert image uploads to JSONL for bulk operation
+      jsonl_data = image_uploads.map do |upload|
+        {
+          synchronous: false,
+          productId: "gid://shopify/Product/#{upload[:product_id]}",
+          media: {
+            mediaContentType: "IMAGE",
+            originalSource: upload[:resource_url],
+            alt: upload[:image_alt]
+          }
+        }.to_json
+      end.join("\n")
+
+      # Create staged upload for the JSONL file
+      staged_upload = create_staged_upload(jsonl_data, "media_creation")
+      return unless staged_upload
+
+      # Extract the path from the key parameter
+      upload_path = staged_upload["parameters"].find { |p| p["name"] == "key" }&.dig("value")
+      return unless upload_path
+
+      Rails.logger.info "[ShopifyBatch] Starting bulk media creation operation"
+
+      mutation = <<~GQL
+        mutation {
+          bulkOperationRunMutation(
+            mutation: """
+              mutation createProductMedia($productId: ID!, $media: CreateMediaInput!, $synchronous: Boolean!) {
+                productCreateMedia(productId: $productId, media: [$media], synchronous: $synchronous) {
+                  media {
+                    ... on MediaImage {
+                      id
+                    }
+                  }
+                  mediaUserErrors {
+                    field
+                    message
+                  }
+                }
+              }
+            """,
+            stagedUploadPath: "#{upload_path}"
+          ) {
+            bulkOperation {
+              id
+              status
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      GQL
+
+      response = @client.query(query: mutation)
+      Rails.logger.info "[ShopifyBatch] Bulk media creation response: #{response.body}"
+
+      if response.body["data"]&.dig("bulkOperationRunMutation", "bulkOperation")
+        operation = response.body["data"]["bulkOperationRunMutation"]["bulkOperation"]
+
+        # Monitor the bulk operation
+        monitor_media_bulk_operation(operation["id"])
+      else
+        Rails.logger.error "[ShopifyBatch] Failed to create bulk media operation: #{response.body["errors"].inspect}"
+      end
+    end
+
+    def monitor_media_bulk_operation(operation_id)
+      Rails.logger.info "[ShopifyBatch] Monitoring media bulk operation: #{operation_id}"
+
+      loop do
+        status = check_bulk_operation_status(operation_id)
+        Rails.logger.info "[ShopifyBatch] Media bulk operation status: #{status}"
+
+        case status["status"]
+        when "COMPLETED"
+          Rails.logger.info "[ShopifyBatch] Media bulk operation completed successfully"
+          break
+        when "FAILED"
+          Rails.logger.error "[ShopifyBatch] Media bulk operation failed: #{status["errorCode"]}"
+          break
+        when "CANCELING", "CANCELED"
+          Rails.logger.error "[ShopifyBatch] Media bulk operation was canceled"
+          break
+        else
+          sleep POLL_INTERVAL
+        end
       end
     end
 
@@ -418,27 +547,6 @@ module Shopify
               }
             }
             userErrors {
-              field
-              message
-            }
-          }
-        }
-      GQL
-    end
-
-    def build_create_media_mutation
-      <<~GQL
-        mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
-          productCreateMedia(productId: $productId, media: $media) {
-            media {
-              ... on MediaImage {
-                id
-                image {
-                  url
-                }
-              }
-            }
-            mediaUserErrors {
               field
               message
             }
