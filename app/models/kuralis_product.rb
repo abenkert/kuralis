@@ -23,7 +23,7 @@ class KuralisProduct < ApplicationRecord
   validates :description, presence: true
   validates :base_price, numericality: { greater_than: 0 }, presence: true
   validates :base_quantity, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, presence: true
-  validates :weight_oz, numericality: { greater_than: 0 }, presence: true
+  # validates :weight_oz, numericality: { greater_than: 0 }, presence: true
   validates :status, presence: true
 
   # Scopes
