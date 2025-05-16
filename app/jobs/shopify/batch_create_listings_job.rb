@@ -387,7 +387,9 @@ module Shopify
               input: staged_upload_inputs
             }
           )
-
+          Rails.logger.info "-------------------------------- "
+          Rails.logger.info "[ShopifyBatch] Staged upload result: #{staged_upload_result.body}"
+          Rails.logger.info "--------------------------------"
           if staged_upload_result.body["data"] && staged_upload_result.body["data"]["stagedUploadsCreate"]
             staged_targets = staged_upload_result.body["data"]["stagedUploadsCreate"]["stagedTargets"]
 
@@ -426,9 +428,9 @@ module Shopify
             end
 
             # Now create media for all successfully uploaded images using a bulk operation
-            if image_uploads.any?
-              create_media_bulk_operation(image_uploads)
-            end
+            # if image_uploads.any?
+            #   create_media_bulk_operation(image_uploads)
+            # end
           else
             Rails.logger.error "[ShopifyBatch] Failed to create staged uploads: #{staged_upload_result.body["errors"]}"
           end
@@ -446,7 +448,6 @@ module Shopify
       # Convert image uploads to JSONL for bulk operation
       jsonl_data = image_uploads.map do |upload|
         {
-          synchronous: false,
           productId: "gid://shopify/Product/#{upload[:product_id]}",
           media: {
             mediaContentType: "IMAGE",
@@ -470,8 +471,8 @@ module Shopify
         mutation {
           bulkOperationRunMutation(
             mutation: """
-              mutation createProductMedia($productId: ID!, $media: CreateMediaInput!, $synchronous: Boolean!) {
-                productCreateMedia(productId: $productId, media: [$media], synchronous: $synchronous) {
+              mutation createProductMedia($productId: ID!, $media: CreateMediaInput!) {
+                productCreateMedia(productId: $productId, media: [$media]) {
                   media {
                     ... on MediaImage {
                       id
