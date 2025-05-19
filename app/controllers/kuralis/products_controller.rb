@@ -4,14 +4,39 @@ module Kuralis
 
     def index
       @filter = params[:filter] || "all"
-      @collector = Kuralis::Collector.new(current_shop.id, params).gather_data
 
-      # Add filtering for draft products
+      # Initialize base query
+      @query = params[:query]
+      @search_by = params[:search_by] || "all"
+
+      # First get the base product collection
       if @filter == "draft"
-        @products = current_shop.kuralis_products.draft.order(created_at: :desc).page(params[:page]).per(20)
+        base_query = current_shop.kuralis_products.draft.order(created_at: :desc)
       else
-        @products = @collector.products
+        # Let the collector gather filtered products
+        @collector = Kuralis::Collector.new(current_shop.id, params).gather_data
+        base_query = @collector.products.except(:page, :per)
       end
+
+      # Apply search if query is present
+      if @query.present?
+        case @search_by
+        when "title"
+          base_query = base_query.where("kuralis_products.title ILIKE ?", "%#{@query}%")
+        when "sku"
+          base_query = base_query.where("kuralis_products.sku ILIKE ?", "%#{@query}%")
+        when "location"
+          base_query = base_query.where("kuralis_products.location ILIKE ?", "%#{@query}%")
+        when "description"
+          base_query = base_query.where("kuralis_products.description ILIKE ?", "%#{@query}%")
+        else # "all" or any other value
+          base_query = base_query.where("kuralis_products.title ILIKE ? OR kuralis_products.sku ILIKE ? OR kuralis_products.location ILIKE ? OR kuralis_products.description ILIKE ?",
+                                    "%#{@query}%", "%#{@query}%", "%#{@query}%", "%#{@query}%")
+        end
+      end
+
+      # Paginate the final results
+      @products = base_query.page(params[:page]).per(20)
     end
 
     def new

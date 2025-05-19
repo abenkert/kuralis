@@ -325,14 +325,18 @@ module Shopify
           end
         end
 
-        # Requeue with exponential backoff
-        self.class.set(wait: actual_delay).perform_later(
+        # Create a new delayed job for retry
+        self.class.perform_later(
           shop_id: @shop.id,
           product_ids: products_data.map { |d| d[:product].id },
           batch_index: @batch_index,
           total_batches: @total_batches
         )
 
+        # Sleep in the current job to provide the delay
+        sleep actual_delay
+
+        # Return from the current job without completing it
         return
       end
 
@@ -456,15 +460,47 @@ module Shopify
 
       Rails.logger.info "[ShopifyBatch] Bulk product creation operation response: #{response.body}"
 
-      if response.body["data"]&.dig("bulkOperationRunMutation", "bulkOperation")
+      # Check if we got an error about an existing bulk operation
+      if response.body["data"]&.dig("bulkOperationRunMutation", "userErrors")&.any? { |e| e["message"]&.include?("already in progress") }
+        # If we're already retrying too many times, give up
+        if @retries >= BULK_OP_MAX_RETRIES
+          Rails.logger.error "[ShopifyBatch] Failed after #{@retries} attempts - a bulk operation is still in progress"
+          update_batch_status("completed", 0, products_data.size)
+          return handle_batch_failure("Cannot start bulk operation - another operation is already in progress and didn't complete after multiple retries")
+        end
+
+        # Use a simple fixed delay with a little jitter
+        delay = 60.seconds + (rand * 10).seconds
+        @retries += 1
+
+        Rails.logger.info "[ShopifyBatch] A bulk operation is already in progress. Retrying job in #{delay.to_i} seconds (attempt #{@retries}/#{BULK_OP_MAX_RETRIES})"
+
+        # Create a new delayed job for retry
+        self.class.perform_later(
+          shop_id: @shop.id,
+          product_ids: products_data.map { |d| d[:product].id },
+          batch_index: @batch_index,
+          total_batches: @total_batches
+        )
+
+        # Sleep in the current job to provide the delay
+        sleep delay
+
+        # Return from the current job without completing it
+        nil
+      elsif response.body["data"]&.dig("bulkOperationRunMutation", "bulkOperation")
         operation = response.body["data"]["bulkOperationRunMutation"]["bulkOperation"]
 
         # Wait for bulk operation to complete and process results
         monitor_then_process_bulk_operation(operation, products_data.map { |d| d[:product].id })
       else
-        Rails.logger.error "[ShopifyBatch] Failed to create bulk product operation: #{response.body["errors"] || response.body["data"]["bulkOperationRunMutation"]["userErrors"]}"
+        # Check for user errors in the response
+        user_errors = response.body["data"]&.dig("bulkOperationRunMutation", "userErrors") || []
+        error_message = user_errors.map { |e| e["message"] }.join(", ")
+
+        Rails.logger.error "[ShopifyBatch] Failed to create bulk product operation: #{error_message}"
         update_batch_status("completed", 0, products_data.size)
-        handle_batch_failure("Failed to create bulk product operation")
+        handle_batch_failure("Failed to create bulk product operation: #{error_message}")
       end
     end
 
@@ -751,9 +787,16 @@ module Shopify
           # If so, we might want to consider it stalled and proceed anyway
           created_at = Time.parse(operation_info["createdAt"]) rescue nil
 
-          if created_at && Time.now.utc - created_at > 10.minutes && @retries > 5
-            Rails.logger.warn "[ShopifyBatch] Found stalled bulk operation (running for >10 min). Proceeding anyway."
-            return false
+          if created_at
+            running_time = Time.now.utc - created_at
+
+            # If operation has been running for more than 10 minutes and we've retried at least 5 times,
+            # or if it's been running for more than 30 minutes regardless of retries,
+            # consider it stalled and proceed
+            if (running_time > 10.minutes && @retries > 5) || running_time > 30.minutes
+              Rails.logger.warn "[ShopifyBatch] Found stalled bulk operation (running for #{running_time.to_i / 60} minutes). Proceeding anyway."
+              return false
+            end
           end
 
           Rails.logger.info "[ShopifyBatch] Found existing bulk operation: #{operation_info["id"]} (status: #{status}, type: #{operation_info["type"]})"
