@@ -16,6 +16,10 @@
     </div>
     
     <div class="card-body">
+      <% if @job_run && @job_run.job_class == "Shopify::BatchCreateListingsJob" %>
+        <%= render partial: 'shared/shopify_bulk_progress', locals: { job: @job_run } %>
+      <% end %>
+      
       <% if @job_run.status == 'running' && @job_run.progress_data.present? %>
         <div class="mb-4">
           <h6>Progress</h6>

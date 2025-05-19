@@ -1,0 +1,87 @@
+<%
+  # Try to get progress info from the job
+  progress = nil
+  
+  if defined?(job) && job.present?
+    # Check if it's a BatchCreateListingsJob
+    if job.is_a?(Shopify::BatchCreateListingsJob) || 
+       (job.respond_to?(:job_class) && job.job_class == "Shopify::BatchCreateListingsJob")
+      progress = Shopify::BulkImportTracker.for_job(job)
+    end
+  end
+  
+  # Don't show anything if no progress info is available
+  return unless progress.present?
+%>
+
+<div class="card mt-3">
+  <div class="card-header bg-primary text-white">
+    <h5 class="mb-0">Shopify Bulk Import Progress</h5>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-6">
+        <h6>Overall Progress</h6>
+        <div class="progress mb-3" style="height: 20px;">
+          <div class="progress-bar" role="progressbar" style="width: <%= progress[:percent_complete] %>%;" 
+               aria-valuenow="<%= progress[:percent_complete] %>" aria-valuemin="0" aria-valuemax="100">
+            <%= progress[:percent_complete] %>%
+          </div>
+        </div>
+        
+        <p>
+          <strong>Status:</strong> 
+          <% if progress[:in_progress] %>
+            <span class="badge bg-info">In Progress</span>
+          <% else %>
+            <span class="badge bg-success">Complete</span>
+          <% end %>
+        </p>
+        
+        <p><strong>Batches:</strong> <%= progress[:completed_batches] %> of <%= progress[:total_batches] %> completed</p>
+        
+        <% if progress[:batch_number].present? %>
+        <p><strong>Current Batch:</strong> <%= progress[:batch_number] %> of <%= progress[:total_batches] %></p>
+        <% end %>
+      </div>
+      
+      <div class="col-md-6">
+        <h6>Product Statistics</h6>
+        <table class="table table-sm">
+          <tbody>
+            <tr>
+              <th>Total Products Processed:</th>
+              <td><%= progress[:total_products] %></td>
+            </tr>
+            <tr>
+              <th>Successfully Imported:</th>
+              <td>
+                <span class="text-success"><%= progress[:successful_products] %></span>
+                <% if progress[:total_products] > 0 %>
+                (<%= (progress[:successful_products].to_f / progress[:total_products] * 100).round %>%)
+                <% end %>
+              </td>
+            </tr>
+            <tr>
+              <th>Failed:</th>
+              <td>
+                <span class="<%= progress[:failed_products] > 0 ? 'text-danger' : 'text-muted' %>">
+                  <%= progress[:failed_products] %>
+                </span>
+                <% if progress[:total_products] > 0 && progress[:failed_products] > 0 %>
+                (<%= (progress[:failed_products].to_f / progress[:total_products] * 100).round %>%)
+                <% end %>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    
+    <% if progress[:job_run_id].present? %>
+    <div class="text-muted mt-2">
+      <small>Job Run ID: <%= progress[:job_run_id] %></small>
+    </div>
+    <% end %>
+  </div>
+</div> 

@@ -6,8 +6,21 @@ module Shopify
     queue_as :shopify
 
     POLL_INTERVAL = 5.seconds # How often to check bulk operation status
-    MAX_RETRIES = 3
+    MAX_RETRIES = 5
+    RETRY_DELAY = 5.seconds
+    SSL_MAX_RETRIES = 5  # More retries for SSL issues
+    SSL_RETRY_DELAY = 10.seconds  # Longer delay between SSL retry attempts
     BATCH_SIZE = 250 # Maximum number of images per bulk upload
+
+    # Bulk operation retry configuration
+    BULK_OP_MAX_RETRIES = 12  # Up to 1 hour of retries (with exponential backoff)
+    BULK_OP_INITIAL_RETRY_DELAY = 30.seconds
+    BULK_OP_MAX_DELAY = 600.seconds  # Cap at 10 minutes
+
+    # Redis keys for tracking overall progress
+    REDIS_KEY_PREFIX = "shopify_bulk_import"
+
+    attr_reader :job_run_id
 
     def perform(shop_id:, product_ids:, batch_index:, total_batches:)
       @shop = Shop.find(shop_id)
@@ -16,12 +29,119 @@ module Shopify
       @total_batches = total_batches
       @retries = 0
 
-      Rails.logger.info "[ShopifyBatch] Starting batch #{batch_index + 1}/#{total_batches} with #{product_ids.size} products"
+      # Generate a unique job run ID for this import session
+      @job_run_id = generate_or_retrieve_job_run_id
 
+      # Track batch start in Redis
+      update_batch_status("started")
+
+      Rails.logger.info "[ShopifyBatch] Starting batch #{batch_index + 1}/#{total_batches} with #{product_ids.size} products (Job Run ID: #{@job_run_id})"
+
+      # Process the batch and track its completion
       process_batch(product_ids)
     end
 
+    # Method to get progress information for this job
+    def progress_info
+      Shopify::BulkImportTracker.for_job(self)
+    end
+
     private
+
+    # Robust retry method that handles SSL connection errors
+    def with_retries(max_retries: MAX_RETRIES, retry_delay: RETRY_DELAY, ssl_retry: false, operation: "API call")
+      retries = 0
+      ssl_retries = 0
+      begin
+        yield
+      rescue OpenSSL::SSL::SSLError, Errno::ECONNRESET, EOFError, Net::ReadTimeout, Net::OpenTimeout => e
+        ssl_retries += 1
+        max = ssl_retry ? SSL_MAX_RETRIES : MAX_RETRIES
+        delay = ssl_retry ? SSL_RETRY_DELAY : RETRY_DELAY
+
+        if ssl_retries <= max
+          Rails.logger.warn "[ShopifyBatch] SSL connection error during #{operation}: #{e.class} - #{e.message}. Retrying in #{delay} seconds (#{ssl_retries}/#{max})"
+          sleep delay
+          retry
+        else
+          Rails.logger.error "[ShopifyBatch] SSL connection error during #{operation} after #{ssl_retries} retries: #{e.class} - #{e.message}"
+          raise
+        end
+      rescue => e
+        retries += 1
+        if retries <= max_retries
+          Rails.logger.warn "[ShopifyBatch] Error during #{operation}: #{e.class} - #{e.message}. Retrying in #{retry_delay} seconds (#{retries}/#{max_retries})"
+          sleep retry_delay
+          retry
+        else
+          Rails.logger.error "[ShopifyBatch] Error during #{operation} after #{retries} retries: #{e.class} - #{e.message}"
+          raise
+        end
+      end
+    end
+
+    def generate_or_retrieve_job_run_id
+      # Try to get existing job run ID for this group of batches
+      job_run_id = Rails.cache.read("#{REDIS_KEY_PREFIX}:current_job_run_id")
+
+      unless job_run_id
+        # Create a new job run ID if none exists
+        job_run_id = SecureRandom.uuid
+        Rails.cache.write("#{REDIS_KEY_PREFIX}:current_job_run_id", job_run_id, expires_in: 24.hours)
+
+        # Initialize counters for this job run
+        Rails.cache.write("#{REDIS_KEY_PREFIX}:#{job_run_id}:total_batches", @total_batches, expires_in: 24.hours)
+        Rails.cache.write("#{REDIS_KEY_PREFIX}:#{job_run_id}:completed_batches", 0, expires_in: 24.hours)
+        Rails.cache.write("#{REDIS_KEY_PREFIX}:#{job_run_id}:total_products", 0, expires_in: 24.hours)
+        Rails.cache.write("#{REDIS_KEY_PREFIX}:#{job_run_id}:successful_products", 0, expires_in: 24.hours)
+        Rails.cache.write("#{REDIS_KEY_PREFIX}:#{job_run_id}:failed_products", 0, expires_in: 24.hours)
+      end
+
+      job_run_id
+    end
+
+    def update_batch_status(status, successful_products = 0, failed_products = 0)
+      case status
+      when "started"
+        # Nothing specific needs to be done, counters are initialized in generate_or_retrieve_job_run_id
+      when "completed"
+        # Increment completed batches
+        Rails.cache.increment("#{REDIS_KEY_PREFIX}:#{@job_run_id}:completed_batches")
+
+        # Update product counters
+        Rails.cache.increment("#{REDIS_KEY_PREFIX}:#{@job_run_id}:total_products", successful_products + failed_products)
+        Rails.cache.increment("#{REDIS_KEY_PREFIX}:#{@job_run_id}:successful_products", successful_products)
+        Rails.cache.increment("#{REDIS_KEY_PREFIX}:#{@job_run_id}:failed_products", failed_products)
+
+        # Check if this was the final batch
+        completed_batches = Rails.cache.read("#{REDIS_KEY_PREFIX}:#{@job_run_id}:completed_batches").to_i
+        total_batches = Rails.cache.read("#{REDIS_KEY_PREFIX}:#{@job_run_id}:total_batches").to_i
+
+        if completed_batches >= total_batches
+          send_final_notification
+        end
+      end
+    end
+
+    def send_final_notification
+      # Get the final stats
+      total_products = Rails.cache.read("#{REDIS_KEY_PREFIX}:#{@job_run_id}:total_products").to_i
+      successful_products = Rails.cache.read("#{REDIS_KEY_PREFIX}:#{@job_run_id}:successful_products").to_i
+      failed_products = Rails.cache.read("#{REDIS_KEY_PREFIX}:#{@job_run_id}:failed_products").to_i
+
+      # Create notification
+      NotificationService.create(
+        shop: @shop,
+        title: "Shopify Bulk Import Complete",
+        message: "All batches completed. Total products processed: #{total_products}, " \
+                 "Successfully imported: #{successful_products}, Failed: #{failed_products}.",
+        category: "bulk_listing",
+        status: failed_products > 0 ? "warning" : "success"
+      )
+
+      # Clean up Redis keys (but keep them around for a bit for debugging)
+      Rails.cache.delete("#{REDIS_KEY_PREFIX}:current_job_run_id", expires_in: 1.hour)
+    end
 
     def process_batch(product_ids)
       begin
@@ -55,6 +175,10 @@ module Shopify
           products_data << product_data
         end
 
+        # Log how many products we're actually processing
+        valid_product_count = products_data.size
+        Rails.logger.info "[ShopifyBatch] Found #{valid_product_count} valid products to process out of #{product_ids.size} provided"
+
         # Step 2: Process all images in bulk if we have any
         if image_uploads.any?
           Rails.logger.info "[ShopifyBatch] Processing #{image_uploads.size} images for #{products_data.size} products"
@@ -68,6 +192,9 @@ module Shopify
       rescue => e
         Rails.logger.error "[ShopifyBatch] Unexpected error: #{e.class} - #{e.message}\n#{e.backtrace.first(10).join("\n")}"
         handle_batch_failure(e)
+
+        # Update batch status as completed with all products failed
+        update_batch_status("completed", 0, product_ids.size)
       end
     end
 
@@ -90,31 +217,34 @@ module Shopify
           }
         end
 
-        # Create staged uploads
-        staged_upload_result = @client.query(
-          query: build_staged_upload_mutation,
-          variables: { input: inputs }
-        )
+        # Create staged uploads with retries for SSL issues
+        with_retries(ssl_retry: true, operation: "staged upload creation") do
+          staged_upload_result = @client.query(
+            query: build_staged_upload_mutation,
+            variables: { input: inputs }
+          )
 
-        if staged_upload_result.body["data"] && staged_upload_result.body["data"]["stagedUploadsCreate"]
-          # Match staged uploads with original image data
-          targets = staged_upload_result.body["data"]["stagedUploadsCreate"]["stagedTargets"]
-          batch.each_with_index do |upload, index|
-            if targets[index]
-              staged_uploads << {
-                image_data: upload,
-                staged_target: targets[index]
-              }
+          if staged_upload_result.body["data"] && staged_upload_result.body["data"]["stagedUploadsCreate"]
+            # Match staged uploads with original image data
+            targets = staged_upload_result.body["data"]["stagedUploadsCreate"]["stagedTargets"]
+            batch.each_with_index do |upload, index|
+              if targets[index]
+                staged_uploads << {
+                  image_data: upload,
+                  staged_target: targets[index]
+                }
+              end
             end
+          else
+            Rails.logger.error "[ShopifyBatch] Failed to create staged uploads: #{staged_upload_result.body["errors"] || staged_upload_result.body["data"]["stagedUploadsCreate"]["userErrors"]}"
           end
-        else
-          Rails.logger.error "[ShopifyBatch] Failed to create staged uploads: #{staged_upload_result.body["errors"] || staged_upload_result.body["data"]["stagedUploadsCreate"]["userErrors"]}"
         end
       end
 
       # Step 2: Upload files to all staged URLs and map resource URLs to products
       Rails.logger.info "[ShopifyBatch] Uploading #{staged_uploads.size} images to staged URLs"
 
+      successful_uploads = 0
       staged_uploads.each do |upload_data|
         image_data = upload_data[:image_data]
         staged_target = upload_data[:staged_target]
@@ -124,33 +254,43 @@ module Shopify
           hash[param["name"]] = param["value"]
         end
 
-        # Upload the image
+        # Upload the image with retries for SSL issues
         success = false
         image_data[:image].blob.open do |file|
-          response = HTTParty.post(
-            staged_target["url"],
-            multipart: true,
-            body: params.merge("file" => file)
-          )
+          with_retries(ssl_retry: true, operation: "image upload") do
+            response = HTTParty.post(
+              staged_target["url"],
+              multipart: true,
+              body: params.merge("file" => file),
+              timeout: 60,  # Increase timeout for large uploads
+              open_timeout: 30  # Increase connection timeout
+            )
 
-          if response.success?
-            # Store the resource URL with the product data
-            resource_url = staged_target["resourceUrl"]
-            image_data[:product_data][:image_urls] << {
-              resource_url: resource_url,
-              alt: image_data[:alt]
-            }
-            success = true
-            Rails.logger.info "[ShopifyBatch] Successfully uploaded image for product #{image_data[:product_id]}"
-          else
-            Rails.logger.error "[ShopifyBatch] Failed to upload image: #{response.code} - #{response.body}"
+            if response.success?
+              # Store the resource URL with the product data
+              resource_url = staged_target["resourceUrl"]
+              image_data[:product_data][:image_urls] << {
+                resource_url: resource_url,
+                alt: image_data[:alt]
+              }
+              success = true
+              successful_uploads += 1
+              Rails.logger.info "[ShopifyBatch] Successfully uploaded image for product #{image_data[:product_id]}"
+            else
+              Rails.logger.error "[ShopifyBatch] Failed to upload image: #{response.code} - #{response.body}"
+              raise "HTTP Error: #{response.code} - #{response.body}" if response.code >= 500
+            end
           end
+        rescue => e
+          Rails.logger.error "[ShopifyBatch] Error processing image upload: #{e.class} - #{e.message}"
         end
 
         unless success
           Rails.logger.error "[ShopifyBatch] Image upload failed for product #{image_data[:product_id]}"
         end
       end
+
+      Rails.logger.info "[ShopifyBatch] Completed image uploads: #{successful_uploads}/#{staged_uploads.size} successful"
     end
 
     def create_products_in_bulk(products_data)
@@ -158,6 +298,45 @@ module Shopify
       products_data = products_data.select { |data| data[:product].present? }
       return if products_data.empty?
 
+      # First check if there's already a bulk operation running
+      if bulk_operation_in_progress?
+        # If we're already retrying too many times, give up
+        if @retries >= BULK_OP_MAX_RETRIES
+          Rails.logger.error "[ShopifyBatch] Failed after #{@retries} attempts - a bulk operation is still in progress"
+          update_batch_status("completed", 0, products_data.size)
+          return handle_batch_failure("Cannot start bulk operation - another operation is already in progress and didn't complete after multiple retries")
+        end
+
+        # Calculate exponential backoff delay with jitter
+        base_delay = [ BULK_OP_INITIAL_RETRY_DELAY * (2 ** @retries), BULK_OP_MAX_DELAY ].min
+        # Add some random jitter (±20%) to avoid thundering herd
+        actual_delay = (base_delay * (0.8 + rand * 0.4)).to_i.seconds
+
+        @retries += 1
+        Rails.logger.info "[ShopifyBatch] A bulk operation is already in progress. Retrying job in #{actual_delay.to_i} seconds (attempt #{@retries}/#{BULK_OP_MAX_RETRIES})"
+
+        # Try to get info about the running operation for better debugging
+        if @retries % 3 == 0  # Only log details every 3rd retry to avoid spam
+          operation_info = get_current_operation_info
+          if operation_info
+            status = operation_info["status"]
+            created_at = operation_info["createdAt"]
+            Rails.logger.info "[ShopifyBatch] Current operation (blocking us): ID #{operation_info["id"]}, status: #{status}, created: #{created_at}"
+          end
+        end
+
+        # Requeue with exponential backoff
+        self.class.set(wait: actual_delay).perform_later(
+          shop_id: @shop.id,
+          product_ids: products_data.map { |d| d[:product].id },
+          batch_index: @batch_index,
+          total_batches: @total_batches
+        )
+
+        return
+      end
+
+      # Now proceed with the bulk operation as before
       # Prepare JSONL data for bulk operation
       jsonl_data = products_data.map do |data|
         product = data[:product]
@@ -208,10 +387,15 @@ module Shopify
         product_input.to_json
       end.join("\n")
 
-      # Create staged upload for the JSONL file
-      staged_upload = create_staged_upload(jsonl_data)
+      # Create staged upload for the JSONL file with SSL retry
+      staged_upload = nil
+      with_retries(ssl_retry: true, operation: "product data staged upload") do
+        staged_upload = create_staged_upload(jsonl_data)
+      end
+
       unless staged_upload
         Rails.logger.error "[ShopifyBatch] Failed to create staged upload for product data"
+        update_batch_status("completed", 0, products_data.size)
         return handle_batch_failure("Failed to create staged upload for product data")
       end
 
@@ -219,10 +403,11 @@ module Shopify
       upload_path = staged_upload["parameters"].find { |p| p["name"] == "key" }&.dig("value")
       unless upload_path
         Rails.logger.error "[ShopifyBatch] Failed to extract upload path from staged upload"
+        update_batch_status("completed", 0, products_data.size)
         return handle_batch_failure("Failed to extract upload path from staged upload")
       end
 
-      # Start bulk operation for product creation
+      # Start bulk operation for product creation with SSL retry
       mutation = <<~GQL
         mutation {
           bulkOperationRunMutation(
@@ -264,7 +449,11 @@ module Shopify
         }
       GQL
 
-      response = @client.query(query: mutation)
+      response = nil
+      with_retries(ssl_retry: true, operation: "bulk operation creation") do
+        response = @client.query(query: mutation)
+      end
+
       Rails.logger.info "[ShopifyBatch] Bulk product creation operation response: #{response.body}"
 
       if response.body["data"]&.dig("bulkOperationRunMutation", "bulkOperation")
@@ -274,6 +463,7 @@ module Shopify
         monitor_then_process_bulk_operation(operation, products_data.map { |d| d[:product].id })
       else
         Rails.logger.error "[ShopifyBatch] Failed to create bulk product operation: #{response.body["errors"] || response.body["data"]["bulkOperationRunMutation"]["userErrors"]}"
+        update_batch_status("completed", 0, products_data.size)
         handle_batch_failure("Failed to create bulk product operation")
       end
     end
@@ -330,43 +520,61 @@ module Shopify
         } ]
       }
 
-      response = @client.query(
-        query: mutation,
-        variables: variables
-      )
+      response = nil
+      with_retries(ssl_retry: true, operation: "staged upload creation") do
+        response = @client.query(
+          query: mutation,
+          variables: variables
+        )
+      end
 
       staged_target = response.body["data"]["stagedUploadsCreate"]["stagedTargets"].first
       return nil unless staged_target
 
-      # Upload the file
-      success = upload_to_url(staged_target, data)
+      # Upload the file with SSL retry
+      success = false
+      with_retries(ssl_retry: true, operation: "file upload to staged URL") do
+        success = upload_to_url(staged_target, data)
+      end
+
       success ? staged_target : nil
     end
 
     def monitor_then_process_bulk_operation(operation, product_ids)
       loop do
-        status = check_bulk_operation_status(operation["id"])
+        status = nil
+        with_retries(ssl_retry: true, operation: "bulk operation status check") do
+          status = check_bulk_operation_status(operation["id"])
+        end
+
         Rails.logger.info "[ShopifyBatch] Bulk operation status: #{status}"
 
         case status["status"]
         when "COMPLETED"
           Rails.logger.info "[ShopifyBatch] Bulk operation completed, processing results"
           if status["url"]
-            # Download and process the JSONL file
-            response = HTTParty.get(status["url"])
+            # Download and process the JSONL file with SSL retry
+            response = nil
+            with_retries(ssl_retry: true, operation: "download bulk operation results") do
+              response = HTTParty.get(status["url"])
+            end
+
             if response.success?
               process_bulk_operation_results(response.body, product_ids)
             else
               Rails.logger.error "[ShopifyBatch] Failed to download bulk operation results: #{response.code}"
+              update_batch_status("completed", 0, product_ids.size)
               handle_batch_failure("Failed to download bulk operation results")
             end
           else
             Rails.logger.error "[ShopifyBatch] No URL provided in completed bulk operation"
+            update_batch_status("completed", 0, product_ids.size)
             handle_batch_failure("No URL provided in completed bulk operation")
           end
           break
         when "FAILED"
           Rails.logger.error "[ShopifyBatch] Bulk operation failed: #{status["errorCode"]}"
+          update_batch_status("completed", 0, product_ids.size)
           handle_batch_failure("Bulk operation failed: #{status["errorCode"]}")
           break
         else
@@ -460,6 +668,10 @@ module Shopify
       successful = results.count(&:success?)
       failed = results.count { |r| !r.success? }
 
+      # Update batch tracking information
+      update_batch_status("completed", successful, failed)
+
+      # Create batch-specific notification
       NotificationService.create(
         shop: @shop,
         title: "Shopify Batch #{@batch_index + 1}/#{@total_batches} Complete",
@@ -488,13 +700,15 @@ module Shopify
         file.write(data)
         file.rewind
 
-        # Upload the file using HTTParty
+        # Upload the file using HTTParty with longer timeouts
         response = self.class.post(
           uri.to_s,
           multipart: true,
           body: params.merge(
             file: File.open(file.path)
-          )
+          ),
+          timeout: 120,  # Increase timeout for large uploads
+          open_timeout: 30  # Increase connection timeout
         )
 
         if response.success?
@@ -513,13 +727,74 @@ module Shopify
     end
 
     def handle_batch_failure(error)
+      error_message = error.is_a?(Exception) ? "#{error.class}: #{error.message}" : error.to_s
+
+      Rails.logger.error "[ShopifyBatch] Batch failure: #{error_message}"
+
       NotificationService.create(
         shop: @shop,
         title: "Shopify Batch #{@batch_index + 1} Failed",
-        message: "Batch failed: #{error}. Please check logs for details.",
+        message: "Batch failed: #{error_message}. Please check logs for details.",
         category: "bulk_listing",
         status: "error"
       )
+    end
+
+    def bulk_operation_in_progress?
+      operation_info = get_current_operation_info
+
+      if operation_info
+        status = operation_info["status"]
+
+        if status == "RUNNING" || status == "CREATED"
+          # Check if it's been running for a very long time (over 10 minutes)
+          # If so, we might want to consider it stalled and proceed anyway
+          created_at = Time.parse(operation_info["createdAt"]) rescue nil
+
+          if created_at && Time.now.utc - created_at > 10.minutes && @retries > 5
+            Rails.logger.warn "[ShopifyBatch] Found stalled bulk operation (running for >10 min). Proceeding anyway."
+            return false
+          end
+
+          Rails.logger.info "[ShopifyBatch] Found existing bulk operation: #{operation_info["id"]} (status: #{status}, type: #{operation_info["type"]})"
+          return true
+        else
+          Rails.logger.info "[ShopifyBatch] Found bulk operation that's not running: #{operation_info["id"]} (status: #{status})"
+        end
+      end
+
+      false
+    end
+
+    def get_current_operation_info
+      # Query to check for any running bulk operations
+      query = <<~GQL
+        query {
+          currentBulkOperation {
+            id
+            status
+            errorCode
+            createdAt
+            completedAt
+            objectCount
+            type
+          }
+        }
+      GQL
+
+      response = nil
+      with_retries(ssl_retry: true, operation: "checking for existing bulk operations") do
+        response = @client.query(query: query)
+      end
+
+      if response.body["data"] && response.body["data"]["currentBulkOperation"]
+        return response.body["data"]["currentBulkOperation"]
+      end
+
+      nil
+    rescue => e
+      Rails.logger.error "[ShopifyBatch] Error checking current operation: #{e.message}"
+      nil
     end
   end
 end

@@ -3,7 +3,9 @@ class BulkListingJob < ApplicationJob
 
   # Optimal batch size for Shopify bulk operations
   SHOPIFY_BATCH_SIZE = 250  # Shopify's bulk mutation can handle up to 250 items
-  CONCURRENT_JOBS = 2      # Limit concurrent jobs to avoid overwhelming rate limits
+
+  # Initial delay between batches (seconds)
+  INITIAL_BATCH_SPACING = 60  # Start the first few batches with 1 minute spacing
 
   # Batch size for chunking product processing
   BATCH_SIZE = 50
@@ -25,28 +27,30 @@ class BulkListingJob < ApplicationJob
       when "shopify"
         # Calculate optimal batching
         total_batches = (product_ids.size.to_f / SHOPIFY_BATCH_SIZE).ceil
-        batch_groups = total_batches.times.each_slice(CONCURRENT_JOBS).to_a
 
-        # Process in controlled concurrent groups
-        batch_groups.each_with_index do |group_indices, group_index|
-          group_indices.each do |batch_index|
-            start_idx = batch_index * SHOPIFY_BATCH_SIZE
-            batch_ids = product_ids[start_idx, SHOPIFY_BATCH_SIZE].compact
+        # Process batches with initial spacing to avoid conflicts
+        # This gives time for the first batch to complete its bulk operation
+        # before subsequent batches start trying
+        total_batches.times do |batch_index|
+          start_idx = batch_index * SHOPIFY_BATCH_SIZE
+          batch_ids = product_ids[start_idx, SHOPIFY_BATCH_SIZE].compact
 
-            next if batch_ids.empty?
+          next if batch_ids.empty?
 
-            Shopify::BatchCreateListingsJob.set(
-              wait: (group_index * 5).seconds  # Stagger groups by 5 seconds
-            ).perform_later(
-              shop_id: shop.id,
-              product_ids: batch_ids,
-              batch_index: batch_index,
-              total_batches: total_batches
-            )
+          # Space out the first few batches to avoid initial conflicts
+          # Later batches will rely on the retry mechanism
+          delay = batch_index < 3 ? (batch_index * INITIAL_BATCH_SPACING) : 0
 
-            Rails.logger.info "Queued Shopify batch #{batch_index + 1}/#{total_batches} with #{batch_ids.size} products"
-          end
+          Shopify::BatchCreateListingsJob.set(wait: delay.seconds).perform_later(
+            shop_id: shop.id,
+            product_ids: batch_ids,
+            batch_index: batch_index,
+            total_batches: total_batches
+          )
+
+          Rails.logger.info "Queued Shopify batch #{batch_index + 1}/#{total_batches} with #{batch_ids.size} products (delay: #{delay}s)"
         end
+
       when "ebay"
         product_ids.each_slice(BATCH_SIZE).with_index do |batch_ids, batch_index|
           Ebay::BatchCreateListingsJob.perform_later(
