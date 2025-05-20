@@ -149,51 +149,99 @@ module Shopify
         Rails.logger.info "[ShopifyBatch] Preparing products and images for processing"
         products_data = []
         image_uploads = []
+        failed_products = []
 
         product_ids.each do |id|
-          product = KuralisProduct.find(id)
-          next if product.shopify_product.present?
+          begin
+            product = KuralisProduct.find(id)
+            next if product.shopify_product.present?
 
-          # Prepare product data for later use
-          product_data = {
-            product: product,
-            image_urls: []
-          }
+            # Prepare product data for later use
+            product_data = {
+              product: product,
+              image_urls: []
+            }
 
-          # Add image data if images exist
-          if product.images.attached?
-            product.images.each do |image|
-              image_uploads << {
-                product_id: product.id,
-                product_data: product_data,  # Reference to where URLs should be stored
-                image: image,
-                alt: product.title
-              }
+            # Add image data if images exist
+            if product.images.attached?
+              product.images.each do |image|
+                image_uploads << {
+                  product_id: product.id,
+                  product_data: product_data,  # Reference to where URLs should be stored
+                  image: image,
+                  alt: product.title
+                }
+              end
             end
-          end
 
-          products_data << product_data
+            products_data << product_data
+          rescue ActiveStorage::FileNotFoundError => e
+            # Handle missing blob file specific errors
+            Rails.logger.error "[ShopifyBatch] Product #{id} has missing image files: #{e.message}"
+            failed_products << { id: id, error: "Missing image files: #{e.message}", error_class: e.class.name }
+          rescue => e
+            # Handle other errors while gathering product data
+            Rails.logger.error "[ShopifyBatch] Error preparing product #{id}: #{e.class} - #{e.message}"
+            failed_products << { id: id, error: e.message, error_class: e.class.name }
+          end
         end
 
         # Log how many products we're actually processing
         valid_product_count = products_data.size
         Rails.logger.info "[ShopifyBatch] Found #{valid_product_count} valid products to process out of #{product_ids.size} provided"
 
+        # Log any products that failed during preparation
+        if failed_products.any?
+          failed_ids = failed_products.map { |p| p[:id] }
+          error_message = "Failed to prepare #{failed_products.size} products: #{failed_ids.join(", ")}"
+          Rails.logger.error "[ShopifyBatch] #{error_message}"
+
+          # Create a notification about the initial failures
+          NotificationService.create(
+            shop: @shop,
+            title: "Products Failed Initial Preparation",
+            message: "Some products could not be prepared for Shopify listing. #{error_message}",
+            category: "bulk_listing",
+            status: "warning"
+          )
+        end
+
+        # If we have no valid products to process, end here
+        if products_data.empty?
+          Rails.logger.warn "[ShopifyBatch] No valid products to process after filtering"
+          update_batch_status("completed", 0, failed_products.size)
+          return
+        end
+
         # Step 2: Process all images in bulk if we have any
         if image_uploads.any?
           Rails.logger.info "[ShopifyBatch] Processing #{image_uploads.size} images for #{products_data.size} products"
-          process_images_in_bulk(image_uploads)
+          # Don't let image processing failures fail the entire batch
+          begin
+            process_images_in_bulk(image_uploads)
+          rescue => e
+            # Log the error but continue with products
+            Rails.logger.error "[ShopifyBatch] Error during bulk image processing: #{e.class} - #{e.message}\n#{e.backtrace.first(10).join("\n")}"
+
+            # Create a notification about the image processing failure
+            NotificationService.create(
+              shop: @shop,
+              title: "Image Processing Issues",
+              message: "Encountered problems processing some product images: #{e.message}. Products will be created without these images.",
+              category: "bulk_listing",
+              status: "warning"
+            )
+          end
         end
 
-        # Step 3: Create products with prepared image URLs
+        # Step 3: Create products with prepared image URLs (whatever we were able to process)
         Rails.logger.info "[ShopifyBatch] Creating #{products_data.size} products with prepared image URLs"
         create_products_in_bulk(products_data)
 
       rescue => e
+        # This should now only handle truly unexpected errors, not ActiveStorage issues
         Rails.logger.error "[ShopifyBatch] Unexpected error: #{e.class} - #{e.message}\n#{e.backtrace.first(10).join("\n")}"
         handle_batch_failure(e)
-
-        # Update batch status as completed with all products failed
         update_batch_status("completed", 0, product_ids.size)
       end
     end
@@ -205,38 +253,63 @@ module Shopify
       Rails.logger.info "[ShopifyBatch] Creating staged uploads for #{image_uploads.size} images"
       staged_uploads = []
 
+      # Keep track of which uploads failed due to file issues
+      failed_uploads = []
+
       image_uploads.each_slice(10) do |batch|
-        # Prepare inputs for the staged uploads
-        inputs = batch.map do |upload|
-          {
-            resource: "IMAGE",
-            filename: upload[:image].filename.to_s,
-            mimeType: upload[:image].content_type,
-            fileSize: upload[:image].byte_size.to_s,
-            httpMethod: "POST"
-          }
-        end
+        begin
+          # Prepare inputs for the staged uploads
+          inputs = batch.map do |upload|
+            {
+              resource: "IMAGE",
+              filename: upload[:image].filename.to_s,
+              mimeType: upload[:image].content_type,
+              fileSize: upload[:image].byte_size.to_s,
+              httpMethod: "POST"
+            }
+          end
 
-        # Create staged uploads with retries for SSL issues
-        with_retries(ssl_retry: true, operation: "staged upload creation") do
-          staged_upload_result = @client.query(
-            query: build_staged_upload_mutation,
-            variables: { input: inputs }
-          )
+          # Create staged uploads with retries for SSL issues
+          with_retries(ssl_retry: true, operation: "staged upload creation") do
+            staged_upload_result = @client.query(
+              query: build_staged_upload_mutation,
+              variables: { input: inputs }
+            )
 
-          if staged_upload_result.body["data"] && staged_upload_result.body["data"]["stagedUploadsCreate"]
-            # Match staged uploads with original image data
-            targets = staged_upload_result.body["data"]["stagedUploadsCreate"]["stagedTargets"]
-            batch.each_with_index do |upload, index|
-              if targets[index]
-                staged_uploads << {
-                  image_data: upload,
-                  staged_target: targets[index]
-                }
+            if staged_upload_result.body["data"] && staged_upload_result.body["data"]["stagedUploadsCreate"]
+              # Match staged uploads with original image data
+              targets = staged_upload_result.body["data"]["stagedUploadsCreate"]["stagedTargets"]
+              batch.each_with_index do |upload, index|
+                if targets[index]
+                  staged_uploads << {
+                    image_data: upload,
+                    staged_target: targets[index]
+                  }
+                end
               end
+            else
+              Rails.logger.error "[ShopifyBatch] Failed to create staged uploads: #{staged_upload_result.body["errors"] || staged_upload_result.body["data"]["stagedUploadsCreate"]["userErrors"]}"
             end
-          else
-            Rails.logger.error "[ShopifyBatch] Failed to create staged uploads: #{staged_upload_result.body["errors"] || staged_upload_result.body["data"]["stagedUploadsCreate"]["userErrors"]}"
+          end
+        rescue ActiveStorage::FileNotFoundError => e
+          # Handle missing blob file errors for a batch
+          batch.each do |upload|
+            Rails.logger.error "[ShopifyBatch] File not found for product #{upload[:product_id]}, image: #{upload[:image].filename}"
+            failed_uploads << {
+              product_id: upload[:product_id],
+              error: "File not found: #{upload[:image].filename}",
+              error_class: e.class.name
+            }
+          end
+        rescue => e
+          # Handle other errors for this batch
+          Rails.logger.error "[ShopifyBatch] Error processing staged uploads batch: #{e.class} - #{e.message}"
+          batch.each do |upload|
+            failed_uploads << {
+              product_id: upload[:product_id],
+              error: "Batch upload error: #{e.message}",
+              error_class: e.class.name
+            }
           end
         end
       end
@@ -246,51 +319,93 @@ module Shopify
 
       successful_uploads = 0
       staged_uploads.each do |upload_data|
-        image_data = upload_data[:image_data]
-        staged_target = upload_data[:staged_target]
+        begin
+          image_data = upload_data[:image_data]
+          staged_target = upload_data[:staged_target]
 
-        # Convert parameters array to hash
-        params = staged_target["parameters"].each_with_object({}) do |param, hash|
-          hash[param["name"]] = param["value"]
-        end
+          # Convert parameters array to hash
+          params = staged_target["parameters"].each_with_object({}) do |param, hash|
+            hash[param["name"]] = param["value"]
+          end
 
-        # Upload the image with retries for SSL issues
-        success = false
-        image_data[:image].blob.open do |file|
-          with_retries(ssl_retry: true, operation: "image upload") do
-            response = HTTParty.post(
-              staged_target["url"],
-              multipart: true,
-              body: params.merge("file" => file),
-              timeout: 60,  # Increase timeout for large uploads
-              open_timeout: 30  # Increase connection timeout
-            )
+          # Upload the image with retries for SSL issues
+          success = false
+          begin
+            image_data[:image].blob.open do |file|
+              with_retries(ssl_retry: true, operation: "image upload") do
+                response = HTTParty.post(
+                  staged_target["url"],
+                  multipart: true,
+                  body: params.merge("file" => file),
+                  timeout: 60,  # Increase timeout for large uploads
+                  open_timeout: 30  # Increase connection timeout
+                )
 
-            if response.success?
-              # Store the resource URL with the product data
-              resource_url = staged_target["resourceUrl"]
-              image_data[:product_data][:image_urls] << {
-                resource_url: resource_url,
-                alt: image_data[:alt]
-              }
-              success = true
-              successful_uploads += 1
-              Rails.logger.info "[ShopifyBatch] Successfully uploaded image for product #{image_data[:product_id]}"
-            else
-              Rails.logger.error "[ShopifyBatch] Failed to upload image: #{response.code} - #{response.body}"
-              raise "HTTP Error: #{response.code} - #{response.body}" if response.code >= 500
+                if response.success?
+                  # Store the resource URL with the product data
+                  resource_url = staged_target["resourceUrl"]
+                  image_data[:product_data][:image_urls] << {
+                    resource_url: resource_url,
+                    alt: image_data[:alt]
+                  }
+                  success = true
+                  successful_uploads += 1
+                  Rails.logger.info "[ShopifyBatch] Successfully uploaded image for product #{image_data[:product_id]}"
+                else
+                  Rails.logger.error "[ShopifyBatch] Failed to upload image: #{response.code} - #{response.body}"
+                  raise "HTTP Error: #{response.code} - #{response.body}" if response.code >= 500
+                end
+              end
             end
+          rescue ActiveStorage::FileNotFoundError => e
+            # Handle missing blob file
+            Rails.logger.error "[ShopifyBatch] File not found for product #{image_data[:product_id]}, image: #{image_data[:image].filename}"
+            failed_uploads << {
+              product_id: image_data[:product_id],
+              error: "File not found: #{image_data[:image].filename}",
+              error_class: e.class.name
+            }
+          rescue => e
+            Rails.logger.error "[ShopifyBatch] Error processing image upload: #{e.class} - #{e.message}"
+            failed_uploads << {
+              product_id: image_data[:product_id],
+              error: e.message,
+              error_class: e.class.name
+            }
+          end
+
+          unless success
+            Rails.logger.error "[ShopifyBatch] Image upload failed for product #{image_data[:product_id]}"
           end
         rescue => e
-          Rails.logger.error "[ShopifyBatch] Error processing image upload: #{e.class} - #{e.message}"
-        end
-
-        unless success
-          Rails.logger.error "[ShopifyBatch] Image upload failed for product #{image_data[:product_id]}"
+          # Catch any unexpected errors during the outer process
+          Rails.logger.error "[ShopifyBatch] Unexpected error during image processing: #{e.class} - #{e.message}"
+          failed_uploads << {
+            product_id: upload_data[:image_data][:product_id],
+            error: "Unexpected error: #{e.message}",
+            error_class: e.class.name
+          }
         end
       end
 
       Rails.logger.info "[ShopifyBatch] Completed image uploads: #{successful_uploads}/#{staged_uploads.size} successful"
+
+      # Log information about failed uploads if any
+      if failed_uploads.any?
+        failed_product_ids = failed_uploads.map { |f| f[:product_id] }.uniq
+
+        error_message = "Failed to process images for #{failed_product_ids.size} products: #{failed_product_ids.join(", ")}"
+        Rails.logger.error "[ShopifyBatch] #{error_message}"
+
+        # Create a notification about the failures
+        NotificationService.create(
+          shop: @shop,
+          title: "Shopify Batch Image Issues",
+          message: "Some product images could not be processed. These products will be created without images. #{error_message}",
+          category: "bulk_listing",
+          status: "warning"
+        )
+      end
     end
 
     def create_products_in_bulk(products_data)
@@ -680,13 +795,19 @@ module Shopify
           # Copy images from kuralis_product to shopify_product
           if product.images.attached?
             product.images.each do |image|
-              image.blob.open do |tempfile|
-                shopify_product.images.attach(
-                  io: tempfile,
-                  filename: image.filename.to_s,
-                  content_type: image.content_type,
-                  identify: false
-                )
+              begin
+                image.blob.open do |tempfile|
+                  shopify_product.images.attach(
+                    io: tempfile,
+                    filename: image.filename.to_s,
+                    content_type: image.content_type,
+                    identify: false
+                  )
+                end
+              rescue ActiveStorage::FileNotFoundError => e
+                Rails.logger.error "[ShopifyBatch] Could not attach image to Shopify product: #{e.message} (product ID: #{product.id})"
+              rescue => e
+                Rails.logger.error "[ShopifyBatch] Error attaching image to Shopify product: #{e.class} - #{e.message} (product ID: #{product.id})"
               end
             end
           end
@@ -762,8 +883,9 @@ module Shopify
       false
     end
 
-    def handle_batch_failure(error)
+    def handle_batch_failure(error, additional_message = nil)
       error_message = error.is_a?(Exception) ? "#{error.class}: #{error.message}" : error.to_s
+      error_message += ". #{additional_message}" if additional_message
 
       Rails.logger.error "[ShopifyBatch] Batch failure: #{error_message}"
 
