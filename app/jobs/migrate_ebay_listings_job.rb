@@ -38,7 +38,7 @@ class MigrateEbayListingsJob < ApplicationJob
           weight_oz = get_weight_from_cached_mapping(
             shipping_profile_weights,
             listing.shipping_profile_id.to_s
-          )
+          ) || 0
 
           # Get tags from store category mapping (using preloaded data)
           tags = get_tags_from_cached_mapping(
@@ -77,7 +77,6 @@ class MigrateEbayListingsJob < ApplicationJob
         end
       end
 
-      # Use bulk insert for better performance if supported by your DB adapter
       if kuralis_products_data.any?
         # Create all products in a single transaction
         KuralisProduct.transaction do

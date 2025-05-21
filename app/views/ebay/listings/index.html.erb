@@ -75,6 +75,63 @@
     </div>
   </div>
 
+  <!-- Search Form -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <%= form_with url: ebay_listings_path, method: :get, class: "row g-3 align-items-center", data: { turbo_frame: "_top" } do |f| %>
+        <div class="col-md-4">
+          <div class="input-group">
+            <%= f.text_field :query, value: params[:query], class: "form-control", placeholder: "Search listings...", "aria-label": "Search" %>
+            <% if params[:query].present? %>
+              <%= link_to ebay_listings_path, class: "input-group-text bg-light text-dark text-decoration-none" do %>
+                <i class="bi bi-x-circle"></i>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+        
+        <div class="col-md-3">
+          <%= f.select :search_by, 
+              options_for_select([
+                ["All Fields", "all"],
+                ["Title", "title"],
+                ["Item ID", "ebay_item_id"],
+                ["SKU", "sku"]
+              ], params[:search_by] || "all"),
+              {}, { class: "form-select" } %>
+        </div>
+        
+        <div class="col-md-2">
+          <%= f.select :status, 
+              options_for_select([
+                ["All Statuses", ""],
+                ["Active", "active"],
+                ["Ended", "ended"],
+                ["Migrated", "migrated"],
+                ["Not Migrated", "not_migrated"]
+              ], params[:status]),
+              {}, { class: "form-select" } %>
+        </div>
+        
+        <div class="col-md-2">
+          <%= f.submit "Search", class: "btn btn-primary w-100" %>
+        </div>
+        
+        <% if params[:query].present? %>
+          <div class="col-md-12 mt-2">
+            <div class="text-muted">
+              <% if @listings.total_count == 0 %>
+                No listings found for "<%= params[:query] %>"
+              <% else %>
+                Found <%= @listings.total_count %> <%= "listing".pluralize(@listings.total_count) %> for "<%= params[:query] %>"
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-body">
       <div class="table-responsive">
