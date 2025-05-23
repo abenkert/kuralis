@@ -149,4 +149,28 @@ class EbayListing < ApplicationRecord
   def ebay_hosted_image_urls
     image_urls
   end
+
+  # Upgrades eBay image URLs to high-quality variants
+  def upgrade_image_urls_to_high_quality!
+    return if image_urls.blank?
+
+    high_quality_urls = image_urls.map do |url|
+      if url.match?(/\/\$_\d+\.JPG\?/)
+        # Replace the "$_X" part with "$_57" to get the high quality variant
+        high_quality_url = url.gsub(/\/\$_\d+\.JPG\?/, "/$_57.JPG?")
+        # Also update the set_id parameter for higher quality if present
+        high_quality_url = high_quality_url.gsub(/set_id=\d+/, "set_id=880000500F") if high_quality_url.include?("set_id=")
+        high_quality_url
+      else
+        url
+      end
+    end
+
+    if high_quality_urls != image_urls
+      update(image_urls: high_quality_urls)
+      Rails.logger.info "Upgraded image URLs to high-quality variants for eBay listing #{ebay_item_id}"
+    end
+
+    high_quality_urls
+  end
 end

@@ -165,7 +165,7 @@ class ImportEbayListingsJob < ApplicationJob
         # ending_reason = item.at_xpath(".//ns:ListingDetails/ns:EndingReason", namespaces)&.text
         location = find_location(description)
 
-        # Update attributes regardless of whether it's a new or existing record
+        # Update the existing listing
         listing.assign_attributes({
           title: item.at_xpath(".//ns:Title", namespaces)&.text,
           description: description,
@@ -254,7 +254,20 @@ class ImportEbayListingsJob < ApplicationJob
     if picture_details
       # Get all PictureURL elements, not just the first one
       picture_details.xpath(".//ns:PictureURL", namespaces).each do |pic_url|
-        urls << pic_url.text if pic_url.text.present?
+        if pic_url.text.present?
+          # Upgrade the image URL to the high-quality "_57" variant
+          url = pic_url.text
+          # Check if this is an eBay image URL with a variant marker
+          if url.match?(/\/\$_\d+\.JPG\?/)
+            # Replace the "$_X" part with "$_57" to get the high quality variant
+            high_quality_url = url.gsub(/\/\$_\d+\.JPG\?/, "/$_57.JPG?")
+            # Also update the set_id parameter for higher quality if present
+            high_quality_url = high_quality_url.gsub(/set_id=\d+/, "set_id=880000500F") if high_quality_url.include?("set_id=")
+            urls << high_quality_url
+          else
+            urls << url
+          end
+        end
       end
     end
     urls.compact

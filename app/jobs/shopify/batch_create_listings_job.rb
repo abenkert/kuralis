@@ -462,12 +462,18 @@ module Shopify
 
         # Use ListingService to prepare product data
         service = Shopify::ListingService.new(product)
+
+        # Add a special tag to identify the Kuralis product ID
+        kuralis_id_tag = "kuralis:#{product.id}"
+        product_tags = product.tags || []
+        product_tags = product_tags + [ kuralis_id_tag ]
+
         product_input = {
           synchronous: true,
           productSet: {
             title: product.title,
             descriptionHtml: service.build_item_description,
-            tags: product.tags,
+            tags: product_tags,
             productOptions: [
               {
                 name: "Title",
@@ -536,6 +542,7 @@ module Shopify
                   product {
                     id
                     handle
+                    tags
                     variants(first: 1) {
                       nodes {
                         title
@@ -769,50 +776,89 @@ module Shopify
           product_data = result["data"]["productSet"]["product"]
           variant_data = product_data["variants"]["nodes"].first
 
-          # Create ShopifyProduct record using the same logic as ListingService
-          product = KuralisProduct.find(product_ids[results.size])
+          # Extract tags from the product data to find our kuralis_id tag
+          product_id = nil
 
-          product_id = product_data["id"].split("/").last
-          handle = product_data["handle"]
-          variant_id = variant_data["inventoryItem"]["id"].split("/").last
-
-          shopify_product = product.create_shopify_product!(
-            shop: @shop,
-            shopify_product_id: product_id,
-            shopify_variant_id: variant_id,
-            handle: handle,
-            title: product.title,
-            description: product.description,
-            price: product.base_price,
-            quantity: product.base_quantity,
-            inventory_location: product.location,
-            tags: product.tags,
-            sku: product.sku,
-            status: "active",
-            published: true
-          )
-
-          # Copy images from kuralis_product to shopify_product
-          if product.images.attached?
-            product.images.each do |image|
-              begin
-                image.blob.open do |tempfile|
-                  shopify_product.images.attach(
-                    io: tempfile,
-                    filename: image.filename.to_s,
-                    content_type: image.content_type,
-                    identify: false
-                  )
-                end
-              rescue ActiveStorage::FileNotFoundError => e
-                Rails.logger.error "[ShopifyBatch] Could not attach image to Shopify product: #{e.message} (product ID: #{product.id})"
-              rescue => e
-                Rails.logger.error "[ShopifyBatch] Error attaching image to Shopify product: #{e.class} - #{e.message} (product ID: #{product.id})"
-              end
+          # First try to find the product ID from the tags
+          if product_data["tags"]
+            kuralis_id_tag = product_data["tags"].find { |tag| tag.start_with?("kuralis:") }
+            if kuralis_id_tag
+              product_id = kuralis_id_tag.split(":").last.to_i
+              Rails.logger.info "[ShopifyBatch] Found Kuralis ID #{product_id} in product tags"
             end
           end
 
-          results << OpenStruct.new(success?: true)
+          # If we couldn't find the ID in tags, try to find by title
+          if product_id.nil?
+            Rails.logger.warn "[ShopifyBatch] Could not find Kuralis ID in tags for product: #{product_data["id"]}, trying to match by title"
+            product_title = product_data["title"] || ""
+            matching_product = KuralisProduct.find_by(title: product_title, shop_id: @shop.id)
+
+            if matching_product
+              product_id = matching_product.id
+              Rails.logger.info "[ShopifyBatch] Found matching Kuralis product by title: #{product_title} (ID: #{product_id})"
+            else
+              Rails.logger.error "[ShopifyBatch] Could not find matching Kuralis product by title: #{product_title}"
+              results << OpenStruct.new(
+                success?: false,
+                errors: [ "Missing Kuralis ID tag and no matching product found by title. Product created in Shopify but not linked to Kuralis." ]
+              )
+              next
+            end
+          end
+
+          # Find the product by ID
+          begin
+            product = KuralisProduct.find(product_id)
+
+            shopify_product_id = product_data["id"].split("/").last
+            handle = product_data["handle"]
+            variant_id = variant_data["inventoryItem"]["id"].split("/").last
+
+            shopify_product = product.create_shopify_product!(
+              shop: @shop,
+              shopify_product_id: shopify_product_id,
+              shopify_variant_id: variant_id,
+              handle: handle,
+              title: product.title,
+              description: product.description,
+              price: product.base_price,
+              quantity: product.base_quantity,
+              inventory_location: product.location,
+              tags: product.tags,
+              sku: product.sku,
+              status: "active",
+              published: true
+            )
+
+            # Copy images from kuralis_product to shopify_product
+            if product.images.attached?
+              product.images.each do |image|
+                begin
+                  image.blob.open do |tempfile|
+                    shopify_product.images.attach(
+                      io: tempfile,
+                      filename: image.filename.to_s,
+                      content_type: image.content_type,
+                      identify: false
+                    )
+                  end
+                rescue ActiveStorage::FileNotFoundError => e
+                  Rails.logger.error "[ShopifyBatch] Could not attach image to Shopify product: #{e.message} (product ID: #{product.id})"
+                rescue => e
+                  Rails.logger.error "[ShopifyBatch] Error attaching image to Shopify product: #{e.class} - #{e.message} (product ID: #{product.id})"
+                end
+              end
+            end
+
+            results << OpenStruct.new(success?: true)
+          rescue => e
+            Rails.logger.error "[ShopifyBatch] Error processing product creation: #{e.class} - #{e.message}"
+            results << OpenStruct.new(
+              success?: false,
+              errors: [ e.message ]
+            )
+          end
         else
           Rails.logger.error "[ShopifyBatch] Invalid result format: #{result}"
           results << OpenStruct.new(
