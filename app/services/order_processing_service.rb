@@ -299,7 +299,7 @@ class OrderProcessingService
     return {} unless address
 
     {
-      name: address["companyName"] || address.dig("contactAddress", "fullName"),
+      name: address["fullName"],
       street1: address["contactAddress"]["addressLine1"],
       street2: address["contactAddress"]["addressLine2"],
       city: address["contactAddress"]["city"],
