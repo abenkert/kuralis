@@ -85,91 +85,33 @@ module Shopify
 
       orders.each do |order_data|
         begin
-          order = @shop.orders.find_or_initialize_by(
-            platform: "shopify",
-            platform_order_id: extract_id_from_gid(order_data["id"])
+          # Use the new enhanced order processing service with idempotency
+          result = OrderProcessingService.process_order_with_idempotency(
+            order_data,
+            "shopify",
+            @shop
           )
 
-          update_order_status(order, order_data)
-          p order_data
-        rescue => e
-          Rails.logger.error "Failed to process order #{order_data['id']}: #{e.message}"
-        end
-      end
-    end
-
-    def update_order_status(order, order_data)
-      order.assign_attributes({
-        subtotal: order_data["subtotalPriceSet"]["shopMoney"]["amount"].to_f,
-        total_price: order_data["totalPriceSet"]["shopMoney"]["amount"].to_f,
-        shipping_cost: order_data["totalShippingPriceSet"]["shopMoney"]["amount"].to_f,
-        fulfillment_status: order_data["displayFulfillmentStatus"]&.downcase,
-        payment_status: order_data["displayFinancialStatus"]&.downcase,
-        paid_at: order_data["processedAt"],
-        shipping_address: nil,
-        customer_name: nil,
-        order_placed_at: order_data["createdAt"]
-      })
-
-      order.save!
-      process_order_items(order, order_data["lineItems"]["edges"])
-    end
-
-    def process_order_items(order, line_items)
-      line_items.each do |edge|
-        item = edge["node"]
-        # If the product was deleted from shopify we wont get a product id back.
-        # In this case we can skip the order item.
-        next if item["product"].nil?
-        product_id = extract_id_from_gid(item["product"]["id"])
-
-        order_item = order.order_items.find_or_initialize_by(
-          platform: "shopify",
-          platform_item_id: product_id
-        )
-
-        kuralis_product = ShopifyProduct.find_by(shopify_product_id: product_id)&.kuralis_product
-
-        order_item.update!(
-          title: item["title"],
-          quantity: item["quantity"].to_i,
-          kuralis_product: kuralis_product
-        )
-
-        order_item.save!
-
-        if kuralis_product
-          # Only adjust inventory if inventory sync is enabled and this is a new order
-          # or an order that happened AFTER the product was imported
-          should_adjust_inventory = @shop.inventory_sync? &&
-                                     (
-                                       kuralis_product.imported_at.present? &&
-                                       order.order_placed_at.present? &&
-                                       order.order_placed_at > kuralis_product.imported_at
-                                     )
-
-          if should_adjust_inventory
-            if order.cancelled?
-              ::InventoryService.release_inventory(
-                kuralis_product: kuralis_product,
-                quantity: item["quantity"],
-                order: order,
-                order_item: order_item
-              )
-            else
-              ::InventoryService.allocate_inventory(
-                kuralis_product: kuralis_product,
-                quantity: item["quantity"],
-                order: order,
-                order_item: order_item
-              )
-            end
+          if result[:success]
+            Rails.logger.info "Successfully processed Shopify order #{extract_id_from_gid(order_data['id'])}"
+            active_order_ids << result[:order].id
           else
-            Rails.logger.info "Skipping inventory adjustment for historical Shopify order: #{order.platform_order_id}. Order date: #{order.order_placed_at}, Product import date: #{kuralis_product.imported_at}"
+            Rails.logger.warn "Shopify order #{extract_id_from_gid(order_data['id'])} processed with errors: #{result[:errors].join(', ')}"
           end
+
+        rescue OrderProcessingService::OrderProcessingError => e
+          Rails.logger.error "Failed to process Shopify order #{extract_id_from_gid(order_data['id'])}: #{e.message}"
+        rescue => e
+          Rails.logger.error "Unexpected error processing Shopify order #{extract_id_from_gid(order_data['id'])}: #{e.message}"
+          Rails.logger.error e.backtrace.join("\n")
         end
       end
     end
+
+    # Legacy methods - now handled by OrderProcessingService
+    # Keeping these as private methods for potential single order updates
+
+    private
 
     def extract_shipping_address(address)
       return {} unless address
@@ -286,7 +228,13 @@ module Shopify
 
       if response.body["data"] && response.body["data"]["order"]
         order_data = response.body["data"]["order"]
-        update_order_status(order, order_data)
+
+        # Use the enhanced order processing service
+        OrderProcessingService.process_order_with_idempotency(
+          order_data,
+          "shopify",
+          @shop
+        )
       end
     rescue => e
       Rails.logger.error "Failed to update order #{order.platform_order_id}: #{e.message}"

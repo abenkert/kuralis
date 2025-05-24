@@ -14,6 +14,8 @@ module Ebay
         Shop.find_each do |shop|
           next unless shop.shopify_ebay_account # Skip shops without eBay connection
 
+
+          # TODO: We definitely need to look into not just looping through the shops. This makes it delayed for certain shops.
           begin
             sync_shop(shop)
           rescue => e
@@ -111,7 +113,13 @@ module Ebay
       raise "eBay API Error: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
 
       order_details = JSON.parse(response.body)
-      update_order_status(order, order_details)
+
+      # Use the enhanced order processing service
+      OrderProcessingService.process_order_with_idempotency(
+        order_details,
+        "ebay",
+        @shop
+      )
     rescue => e
       Rails.logger.error "Failed to update order #{order.platform_order_id}: #{e.message}"
     end
@@ -119,157 +127,40 @@ module Ebay
     def process_orders(response)
       response["orders"].each do |ebay_order|
         begin
-          order = @shop.orders.find_or_initialize_by(
-            platform: "ebay",
-            platform_order_id: ebay_order["orderId"]
+          # Use the new enhanced order processing service with idempotency
+          result = OrderProcessingService.process_order_with_idempotency(
+            ebay_order,
+            "ebay",
+            @shop
           )
 
-          update_order_status(order, ebay_order)
-        rescue => e
-          Rails.logger.error "Failed to process order #{ebay_order['orderId']}: #{e.message}"
-        end
-      end
-    end
-
-    def update_order_status(order, ebay_order)
-      order_status = determine_order_status(ebay_order)
-      shipping_cost = calc_shipping_cost(ebay_order)
-
-      # Convert string values to BigDecimal for proper decimal arithmetic
-      subtotal = BigDecimal(ebay_order["pricingSummary"]["priceSubtotal"]["value"].to_s)
-      total_price = BigDecimal(ebay_order["pricingSummary"]["total"]["value"].to_s)
-
-      order.assign_attributes(
-        subtotal: subtotal,
-        total_price: total_price,
-        shipping_cost: shipping_cost,
-        fulfillment_status: order_status,
-        payment_status: ebay_order["orderPaymentStatus"],
-        paid_at: ebay_order["paymentSummary"]["payments"]&.first&.dig("paymentDate"),
-        shipping_address: extract_shipping_address(ebay_order),
-        customer_name: extract_buyer_name(ebay_order),
-        order_placed_at: ebay_order["creationDate"]
-      )
-
-      # I DONT THINK WE NEED THIS STATUS FIELD SINCE WE HAVE PAYMENT AND FULFILLMENT STATUS
-      # status: map_fulfillment_status(ebay_order['fulfillmentStatus']),
-
-      order.save!
-      process_order_items(order, ebay_order)
-    end
-
-    def determine_order_status(ebay_order)
-      order_status = ebay_order["orderFulfillmentStatus"]
-      order_status = "cancelled" if order_status == "NOT_STARTED" && ebay_order["cancelStatus"]["cancelState"] == "CANCELED"
-
-      order_status
-    end
-
-    def calc_shipping_cost(ebay_order)
-      # Convert string values to BigDecimal for proper decimal arithmetic
-      shipping_cost = BigDecimal(ebay_order["pricingSummary"]["deliveryCost"]["value"].to_s)
-
-      # Safely handle shipping discount which might not exist
-      shipping_discount = if ebay_order.dig("pricingSummary", "deliveryDiscount", "value")
-                           BigDecimal(ebay_order.dig("pricingSummary", "deliveryDiscount", "value").to_s)
-      else
-                           BigDecimal("0")
-      end
-
-      # Shipping discount is a negative value, so we add it to the shipping cost
-      shipping_cost = shipping_cost + shipping_discount
-
-      # Return as BigDecimal
-      shipping_cost
-    end
-
-    def map_fulfillment_status(status)
-      case status
-      when "NOT_STARTED" then "pending"
-      when "IN_PROGRESS" then "processing"
-      when "FULFILLED" then "completed"
-      when "FAILED" then "failed"
-      else "pending"
-      end
-    end
-
-    def extract_shipping_address(ebay_order)
-      address = ebay_order["fulfillmentStartInstructions"]&.first&.dig("shippingStep", "shipTo")
-      return {} unless address
-
-      {
-        name: address["fullName"],
-        street1: address["contactAddress"]["addressLine1"],
-        street2: address["contactAddress"]["addressLine2"],
-        city: address["contactAddress"]["city"],
-        state: address["contactAddress"]["stateOrProvince"],
-        postal_code: address["contactAddress"]["postalCode"],
-        country: address["contactAddress"]["countryCode"],
-        phone: address.dig("primaryPhone", "phoneNumber")
-      }
-    end
-
-    def extract_buyer_name(ebay_order)
-      ebay_order["buyer"]["username"]
-    end
-
-    def process_order_items(order, ebay_order)
-      ebay_order["lineItems"].each do |line_item|
-        # Ensure quantity is an integer
-        quantity = line_item["quantity"].to_i
-
-        # Find the associated Kuralis product
-        kuralis_product = EbayListing.find_by(ebay_item_id: line_item["legacyItemId"])&.kuralis_product
-
-        # Find or initialize the order item with all attributes
-        order_item = order.order_items.find_or_initialize_by(
-          platform: "ebay",
-          platform_item_id: line_item["legacyItemId"]
-        )
-
-        # Set all attributes
-        order_item.assign_attributes(
-          title: line_item["title"],
-          quantity: quantity,
-          kuralis_product: kuralis_product
-        )
-
-        # Save the order item to get an id
-        order_item.save!
-
-        # Process inventory if we have a Kuralis product
-        if kuralis_product
-          # Only adjust inventory if inventory sync is enabled and this is a new order
-          # or an order that happened AFTER the product was imported
-          should_adjust_inventory = @shop.inventory_sync? &&
-                                      (
-                                        kuralis_product.imported_at.present? &&
-                                        order.order_placed_at.present? &&
-                                        order.order_placed_at > kuralis_product.imported_at
-                                      )
-
-
-          if should_adjust_inventory
-            if order.cancelled?
-              ::InventoryService.release_inventory(
-                kuralis_product: kuralis_product,
-                quantity: quantity,
-                order: order,
-                order_item: order_item
-              )
-            else
-              ::InventoryService.allocate_inventory(
-                kuralis_product: kuralis_product,
-                quantity: quantity,
-                order: order,
-                order_item: order_item
-              )
-            end
+          if result[:success]
+            Rails.logger.info "Successfully processed eBay order #{ebay_order['orderId']}"
           else
-            Rails.logger.info "Skipping inventory adjustment for historical order: #{order.platform_order_id}. Order date: #{order.order_placed_at}, Product import date: #{kuralis_product.imported_at}"
+            Rails.logger.warn "eBay order #{ebay_order['orderId']} processed with errors: #{result[:errors].join(', ')}"
           end
+
+        rescue OrderProcessingService::OrderProcessingError => e
+          Rails.logger.error "Failed to process eBay order #{ebay_order['orderId']}: #{e.message}"
+        rescue => e
+          Rails.logger.error "Unexpected error processing eBay order #{ebay_order['orderId']}: #{e.message}"
+          Rails.logger.error e.backtrace.join("\n")
         end
       end
+    end
+
+    # Legacy methods - now handled by OrderProcessingService
+    # Keeping these as private methods for potential single order updates
+
+    private
+
+    def update_single_order_legacy(order, ebay_order)
+      # Use the new service for single order updates too
+      OrderProcessingService.process_order_with_idempotency(
+        ebay_order,
+        "ebay",
+        @shop
+      )
     end
   end
 end

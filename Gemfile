@@ -96,3 +96,6 @@ gem "pgvector", "~> 0.2.2"
 gem 'ruby-vips', '~> 2.1'  # Faster than mini_magick
 
 gem 'sidekiq-scheduler'
+
+# Add distributed locking for inventory management
+gem 'redis-lock', '~> 0.2.0'

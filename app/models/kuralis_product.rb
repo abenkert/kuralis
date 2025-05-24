@@ -34,7 +34,7 @@ class KuralisProduct < ApplicationRecord
   scope :from_shopify, -> { where(source_platform: "shopify") }
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
 
-  after_update :schedule_inventory_sync, if: -> { saved_change_to_base_quantity? }
+  after_update :schedule_inventory_sync, if: -> { saved_change_to_base_quantity? && !@skip_inventory_sync }
   # after_update :schedule_general_updates, if: :should_update_platforms?
 
   # Handle tags input
@@ -296,8 +296,8 @@ class KuralisProduct < ApplicationRecord
     # Record the timestamp of this inventory update
     self.update_column(:last_inventory_update, Time.current)
 
-    # Schedule the job to process inventory transactions
-    ProcessInventoryTransactionsJob.set(wait: 5.seconds).perform_later(shop.id, id)
+    # Schedule the new cross-platform sync job (no skip platform)
+    CrossPlatformInventorySyncJob.set(wait: 5.seconds).perform_later(shop.id, id, nil)
   end
 
   # TODO: We need to possibly look at changes to ebay_product_attribute and shopify_product_attributes

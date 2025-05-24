@@ -1,0 +1,16 @@
+# Sidekiq-scheduler configuration
+# This file defines recurring jobs for the application
+
+# inventory_health_check:
+#   class: InventoryHealthCheckJob
+#   cron: "*/15 * * * *"  # Every 15 minutes
+#   queue: monitoring
+#   description: "Monitor inventory health across all shops"
+
+# You can add more scheduled jobs here as needed
+# Example:
+# daily_inventory_reconciliation:
+#   class: DailyInventoryReconciliationJob
+#   cron: "0 2 * * *"  # Daily at 2 AM
+#   queue: reconciliation
+#   description: "Daily inventory reconciliation across platforms" 

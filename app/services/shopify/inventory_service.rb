@@ -1,6 +1,7 @@
 module Shopify
   class InventoryService
     attr_reader :shopify_product, :product, :shop
+    class ShopifyUpdateError < StandardError; end
 
     def initialize(shopify_product, kuralis_product)
       @shopify_product = shopify_product
@@ -10,10 +11,13 @@ module Shopify
     end
 
     def update_inventory
-      if @product.base_quantity <= 0 || @product.status != "active"
-        disable_product
+      Rails.logger.info "Updating Shopify inventory for product_id=#{@product.id}, quantity=#{@product.base_quantity}"
+
+      # Handle different inventory scenarios
+      if @product.base_quantity.zero?
+        handle_zero_inventory
       else
-        update_product
+        handle_inventory_update
       end
     end
 
@@ -276,6 +280,221 @@ module Shopify
     rescue => e
       Rails.logger.error "Error fetching variant ID: #{e.message}"
       nil
+    end
+
+    def handle_zero_inventory
+      case @product.status
+      when "completed"
+        # Use EndProductService to respect shop's archiving preference
+        handle_completed_product_with_zero_inventory
+      when "inactive"
+        # Set to draft but don't archive
+        set_product_status("DRAFT")
+      else
+        # Just update inventory to 0 but keep active
+        update_shopify_inventory_only
+      end
+    end
+
+    def handle_inventory_update
+      # Update both inventory and ensure product is active
+      success = update_shopify_inventory_only
+
+      if success && @product.status == "active"
+        # Ensure product is published if it was previously archived
+        set_product_status("ACTIVE")
+      end
+
+      success
+    end
+
+    def handle_completed_product_with_zero_inventory
+      Rails.logger.info "Handling completed product with zero inventory: product_id=#{@shopify_product.shopify_product_id}"
+
+      # First set inventory to 0
+      inventory_success = update_shopify_inventory_only
+
+      # Then archive or delete based on shop preference
+      end_product_success = disable_product  # This calls EndProductService which respects shop settings
+
+      if end_product_success
+        action = @shop.shopify_archive_products? ? "archived" : "deleted"
+        Rails.logger.info "Successfully #{action} Shopify product_id=#{@shopify_product.shopify_product_id} due to zero inventory"
+      else
+        action = @shop.shopify_archive_products? ? "archive" : "delete"
+        Rails.logger.error "Failed to #{action} Shopify product_id=#{@shopify_product.shopify_product_id}"
+      end
+
+      inventory_success && end_product_success
+    end
+
+    def archive_product_on_shopify
+      Rails.logger.info "Archiving Shopify product due to zero inventory"
+
+      # First set inventory to 0
+      inventory_success = update_shopify_inventory_only
+
+      # Then archive the product
+      archive_success = set_product_status("ARCHIVED")
+
+      if archive_success
+        Rails.logger.info "Successfully archived Shopify product_id=#{@shopify_product.shopify_product_id}"
+      else
+        Rails.logger.error "Failed to archive Shopify product_id=#{@shopify_product.shopify_product_id}"
+      end
+
+      inventory_success && archive_success
+    end
+
+    def update_shopify_inventory_only
+      # Use the same logic as update_inventory_level but simplified
+      variant_data = get_first_variant_id
+
+      if variant_data.nil? || variant_data[:inventory_item_id].nil?
+        Rails.logger.error "Could not find a valid inventory item ID for product #{@shopify_product.gid}"
+        return false
+      end
+
+      delta = @product.base_quantity - @shopify_product.quantity
+
+      # Skip if there's no change needed
+      if delta == 0
+        Rails.logger.info "No inventory adjustment needed for product #{@shopify_product.shopify_product_id}"
+        return true
+      end
+
+      Rails.logger.info "Adjusting inventory for product #{@shopify_product.shopify_product_id} by #{delta}"
+
+      begin
+        response = @client.query(
+          query: inventory_update_mutation,
+          variables: {
+            input: {
+              reason: "other",
+              name: "available",
+              changes: [
+                {
+                  inventoryItemId: variant_data[:inventory_item_id],
+                  locationId: @shop.default_location_id,
+                  delta: delta
+                }
+              ]
+            }
+          }
+        )
+
+        if response.body["errors"]
+          Rails.logger.error "Shopify inventory update error: #{response.body['errors']}"
+          return false
+        end
+
+        if response.body["data"]["inventoryAdjustQuantities"]["userErrors"]&.any?
+          errors = response.body["data"]["inventoryAdjustQuantities"]["userErrors"]
+          Rails.logger.error "Shopify inventory update user errors: #{errors}"
+          return false
+        end
+
+        Rails.logger.info "Successfully updated Shopify inventory to #{@product.base_quantity}"
+        true
+
+      rescue => e
+        Rails.logger.error "Error updating Shopify inventory: #{e.message}"
+        false
+      end
+    end
+
+    def set_product_status(status)
+      begin
+        response = @client.query(
+          query: product_status_mutation,
+          variables: {
+            productId: @shopify_product.gid,
+            status: status
+          }
+        )
+
+        if response.body["errors"]
+          Rails.logger.error "Shopify product status update error: #{response.body['errors']}"
+          return false
+        end
+
+        if response.body["data"]["productUpdate"]["userErrors"].any?
+          errors = response.body["data"]["productUpdate"]["userErrors"]
+          Rails.logger.error "Shopify product status update user errors: #{errors}"
+          return false
+        end
+
+        Rails.logger.info "Successfully set Shopify product status to #{status}"
+        true
+
+      rescue => e
+        Rails.logger.error "Error updating Shopify product status: #{e.message}"
+        false
+      end
+    end
+
+    def product_status_mutation
+      <<~GQL
+        mutation productUpdate($productId: ID!, $status: ProductStatus!) {
+          productUpdate(
+            input: {
+              id: $productId
+              status: $status
+            }
+          ) {
+            product {
+              id
+              status
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      GQL
+    end
+
+    def primary_location_id
+      # You'll need to get the primary location ID for your shop
+      # This is typically cached or stored in your shop configuration
+      @shop.primary_location_id || fetch_primary_location_id
+    end
+
+    def fetch_primary_location_id
+      # Fetch the primary location from Shopify
+      response = @client.query(
+        query: locations_query
+      )
+
+      locations = response.body["data"]["locations"]["edges"]
+      primary_location = locations.find { |edge| edge["node"]["isPrimary"] }
+
+      if primary_location
+        location_id = primary_location["node"]["id"].split("/").last
+        # Cache this for future use
+        @shop.update(primary_location_id: location_id) if @shop.respond_to?(:primary_location_id=)
+        location_id
+      else
+        # Fallback to first location
+        locations.first["node"]["id"].split("/").last if locations.any?
+      end
+    end
+
+    def locations_query
+      <<~GQL
+        query {
+          locations(first: 10) {
+            edges {
+              node {
+                id
+                name
+                isPrimary
+              }
+            }
+          }
+        }
+      GQL
     end
   end
 end

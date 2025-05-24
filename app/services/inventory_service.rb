@@ -1,294 +1,96 @@
+require "redis-lock"
+
 class InventoryService
   class InsufficientInventoryError < StandardError; end
   class InventoryLockError < StandardError; end
+  class PlatformSyncError < StandardError; end
 
   # Maximum time to wait for a lock before giving up (in seconds)
-  LOCK_TIMEOUT = 10
+  LOCK_TIMEOUT = 30
+  REDIS_LOCK_TIMEOUT = 60
 
+  # Redis connection for locking
+  def self.redis_connection
+    @redis_connection ||= Redis.new(
+      url: ENV.fetch("REDIS_URL", "redis://localhost:6379/0")
+    )
+  end
+
+  # Enhanced allocation with distributed locking and atomic operations
   def self.allocate_inventory(kuralis_product:, quantity:, order:, order_item:)
     return unless kuralis_product && quantity && order && order_item
 
-    # Ensure initial_quantity is set to prevent reconciliation issues
-    ensure_initial_quantity_set(kuralis_product)
+    # Generate idempotency key to prevent duplicate processing
+    idempotency_key = generate_idempotency_key(order, order_item, "allocation")
 
-    # Check if we already have a transaction for this order item
-    existing_transaction = InventoryTransaction.find_by(
-      kuralis_product: kuralis_product,
-      order_item: order_item,
-      transaction_type: "allocation"
-    )
-
-    if existing_transaction
-      Rails.logger.info "Skipping duplicate allocation for order_item_id=#{order_item.id}, product_id=#{kuralis_product.id}"
-      return existing_transaction
+    # Check if already processed
+    if Rails.cache.exist?("inventory_processed:#{idempotency_key}")
+      Rails.logger.info "Skipping duplicate allocation for idempotency_key=#{idempotency_key}"
+      return Rails.cache.read("inventory_result:#{idempotency_key}")
     end
-
 
     Rails.logger.info "Allocating inventory for order_id=#{order.id}, product_id=#{kuralis_product.id}, quantity=#{quantity}"
 
+    # Use distributed lock to prevent race conditions
+    lock_key = "inventory_lock:#{kuralis_product.id}"
+
     begin
-      # Use a timeout to prevent deadlocks
-      Timeout.timeout(LOCK_TIMEOUT) do
-        kuralis_product.with_lock do
-          # Double-check after acquiring lock (prevent race conditions)
-          if InventoryTransaction.exists?(
-            kuralis_product: kuralis_product,
-            order_item: order_item,
-            transaction_type: "allocation"
-          )
-            Rails.logger.info "Race condition detected: Another process already allocated for order_item_id=#{order_item.id}"
-            return
-          end
+      redis_connection.lock_for_update(lock_key) do
+        result = allocate_inventory_atomic(kuralis_product, quantity, order, order_item)
 
-          if kuralis_product.base_quantity >= quantity
-            inventory_transaction = InventoryTransaction.create!(
-              kuralis_product: kuralis_product,
-              order_item: order_item,
-              order: order,
-              quantity: -quantity,
-              transaction_type: "allocation",
-              previous_quantity: kuralis_product.base_quantity,
-              new_quantity: kuralis_product.base_quantity - quantity,
-              processed: false
-            )
+        # Cache the result with idempotency key
+        Rails.cache.write("inventory_processed:#{idempotency_key}", true, expires_in: 7.days)
+        Rails.cache.write("inventory_result:#{idempotency_key}", result, expires_in: 7.days)
 
-            # Save current time for tracking inventory change timing
-            update_data = {
-              base_quantity: inventory_transaction.new_quantity,
-              last_inventory_update: Time.current
-            }
-
-            # Mark as out-of-stock if needed
-            if inventory_transaction.new_quantity.zero?
-              update_data[:status] = "completed"
-            end
-
-            kuralis_product.update!(update_data)
-
-            # Schedule inventory processing
-            schedule_inventory_processing(kuralis_product)
-
-            # Return the transaction for potential future use
-            inventory_transaction
-          else
-            # Record the failed allocation attempt with details
-            inventory_transaction = InventoryTransaction.create!(
-              kuralis_product: kuralis_product,
-              order_item: order_item,
-              order: order,
-              quantity: -quantity,
-              transaction_type: "allocation_failed",
-              previous_quantity: kuralis_product.base_quantity,
-              new_quantity: kuralis_product.base_quantity,
-              notes: "Insufficient Inventory: Requested #{quantity}, Available #{kuralis_product.base_quantity}",
-              processed: false
-            )
-
-            # Create notification for store owner
-            Notification.create!(
-              shop_id: order.shop_id,
-              title: "Insufficient Inventory",
-              message: "Order ##{order.platform_order_id} requires #{quantity} units of '#{kuralis_product.title}' but only #{kuralis_product.base_quantity} available",
-              category: "inventory",
-              status: "warning",
-              metadata: {
-                order_id: order.id,
-                product_id: kuralis_product.id,
-                requested: quantity,
-                available: kuralis_product.base_quantity
-              }
-            )
-
-            # Schedule inventory processing
-            schedule_inventory_processing(kuralis_product)
-
-            # Return the failed transaction
-            inventory_transaction
-          end
-        end
+        result
       end
     rescue Timeout::Error
-      Rails.logger.error "LOCK TIMEOUT: Failed to acquire lock for product_id=#{kuralis_product.id} after #{LOCK_TIMEOUT} seconds"
-
-      # Create a notification about the lock timeout
-      Notification.create!(
-        shop_id: order.shop_id,
-        title: "Inventory System Warning",
-        message: "Failed to process inventory for product '#{kuralis_product.title}' due to database contention",
-        category: "system",
-        status: "error",
-        metadata: {
-          order_id: order.id,
-          product_id: kuralis_product.id,
-          error: "lock_timeout"
-        }
-      )
-
-      raise InventoryLockError, "Failed to acquire lock for product_id=#{kuralis_product.id}"
+      Rails.logger.error "LOCK TIMEOUT: Failed to acquire inventory lock for product_id=#{kuralis_product.id}"
+      raise InventoryLockError, "Could not acquire inventory lock within #{LOCK_TIMEOUT} seconds"
+    rescue => e
+      Rails.logger.error "Error in inventory allocation: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      raise
     end
   end
 
+  # Enhanced release with distributed locking
   def self.release_inventory(kuralis_product:, quantity:, order:, order_item:)
     return unless kuralis_product && quantity && order && order_item
 
-    # Ensure initial_quantity is set to prevent reconciliation issues
-    ensure_initial_quantity_set(kuralis_product)
+    # Generate idempotency key
+    idempotency_key = generate_idempotency_key(order, order_item, "release")
 
-    # Check if we already have a transaction for this order item
-    existing_transaction = InventoryTransaction.find_by(
-      kuralis_product: kuralis_product,
-      order_item: order_item,
-      transaction_type: "release"
-    )
-
-    if existing_transaction
-      Rails.logger.info "Skipping duplicate release for order_item_id=#{order_item.id}, product_id=#{kuralis_product.id}"
-      return existing_transaction
+    # Check if already processed
+    if Rails.cache.exist?("inventory_processed:#{idempotency_key}")
+      Rails.logger.info "Skipping duplicate release for idempotency_key=#{idempotency_key}"
+      return Rails.cache.read("inventory_result:#{idempotency_key}")
     end
 
     Rails.logger.info "Releasing inventory for order_id=#{order.id}, product_id=#{kuralis_product.id}, quantity=#{quantity}"
 
+    lock_key = "inventory_lock:#{kuralis_product.id}"
+
     begin
-      # Use a timeout to prevent deadlocks
-      Timeout.timeout(LOCK_TIMEOUT) do
-        kuralis_product.with_lock do
-          # Double-check after acquiring lock (prevent race conditions)
-          if InventoryTransaction.exists?(
-            kuralis_product: kuralis_product,
-            order_item: order_item,
-            transaction_type: "release"
-          )
-            Rails.logger.info "Race condition detected: Another process already released for order_item_id=#{order_item.id}"
-            return
-          end
+      redis_connection.lock_for_update(lock_key) do
+        result = release_inventory_atomic(kuralis_product, quantity, order, order_item)
 
-          inventory_transaction = InventoryTransaction.create!(
-            kuralis_product: kuralis_product,
-            order_item: order_item,
-            order: order,
-            quantity: quantity,
-            transaction_type: "release",
-            previous_quantity: kuralis_product.base_quantity,
-            new_quantity: kuralis_product.base_quantity + quantity,
-            processed: false
-          )
+        # Cache the result
+        Rails.cache.write("inventory_processed:#{idempotency_key}", true, expires_in: 7.days)
+        Rails.cache.write("inventory_result:#{idempotency_key}", result, expires_in: 7.days)
 
-          # Always update last_inventory_update for tracking
-          kuralis_product.update!(
-            base_quantity: inventory_transaction.new_quantity,
-            status: "active",
-            last_inventory_update: Time.current
-          )
-
-          # Schedule inventory processing
-          schedule_inventory_processing(kuralis_product)
-
-          # Return the transaction for potential future use
-          inventory_transaction
-        end
+        result
       end
     rescue Timeout::Error
-      Rails.logger.error "LOCK TIMEOUT: Failed to acquire lock for product_id=#{kuralis_product.id} after #{LOCK_TIMEOUT} seconds"
-
-      # Create a notification about the lock timeout
-      Notification.create!(
-        shop_id: order.shop_id,
-        title: "Inventory System Warning",
-        message: "Failed to release inventory for product '#{kuralis_product.title}' due to database contention",
-        category: "system",
-        status: "error",
-        metadata: {
-          order_id: order.id,
-          product_id: kuralis_product.id,
-          error: "lock_timeout"
-        }
-      )
-
-      raise InventoryLockError, "Failed to acquire lock for product_id=#{kuralis_product.id}"
+      Rails.logger.error "LOCK TIMEOUT: Failed to acquire inventory lock for product_id=#{kuralis_product.id}"
+      raise InventoryLockError, "Could not acquire inventory lock within #{LOCK_TIMEOUT} seconds"
+    rescue => e
+      Rails.logger.error "Error in inventory release: #{e.message}"
+      raise
     end
   end
 
-  def self.reconcile_inventory(kuralis_product:)
-    return unless kuralis_product
-
-    # Ensure initial_quantity is set
-    ensure_initial_quantity_set(kuralis_product)
-
-    Rails.logger.info "Starting inventory reconciliation for product_id=#{kuralis_product.id}"
-
-    begin
-      # Use a timeout to prevent deadlocks
-      Timeout.timeout(LOCK_TIMEOUT) do
-        kuralis_product.with_lock do
-          # Calculate expected inventory based on initial quantity and all transactions
-          expected_quantity = calculate_expected_quantity(kuralis_product)
-          current_quantity = kuralis_product.base_quantity
-
-          if expected_quantity != current_quantity
-            # Record the discrepancy details
-            discrepancy = expected_quantity - current_quantity
-
-            InventoryTransaction.create!(
-              kuralis_product: kuralis_product,
-              quantity: discrepancy,
-              transaction_type: "reconciliation",
-              previous_quantity: current_quantity,
-              new_quantity: expected_quantity,
-              notes: "Inventory reconciliation adjustment: #{discrepancy > 0 ? 'Added' : 'Removed'} #{discrepancy.abs} units",
-              processed: false
-            )
-
-            # Update with the reconciled quantity
-            kuralis_product.update!(
-              base_quantity: expected_quantity,
-              last_inventory_update: Time.current
-            )
-
-            # Schedule inventory processing
-            schedule_inventory_processing(kuralis_product)
-
-            # Notify store owner of significant discrepancies
-            if discrepancy.abs >= 5 # Threshold for notification
-              Notification.create!(
-                shop_id: kuralis_product.shop_id,
-                title: "Inventory Reconciliation",
-                message: "Significant inventory discrepancy detected for '#{kuralis_product.title}'. #{discrepancy > 0 ? 'Added' : 'Removed'} #{discrepancy.abs} units.",
-                category: "inventory",
-                status: "info",
-                metadata: {
-                  product_id: kuralis_product.id,
-                  previous: current_quantity,
-                  current: expected_quantity,
-                  discrepancy: discrepancy
-                }
-              )
-            end
-
-            Rails.logger.info "Reconciled inventory for product_id=#{kuralis_product.id}: #{current_quantity} → #{expected_quantity} (Δ#{discrepancy})"
-          else
-            Rails.logger.info "No reconciliation needed for product_id=#{kuralis_product.id}, inventory correct at #{current_quantity}"
-          end
-        end
-      end
-    rescue Timeout::Error
-      Rails.logger.error "LOCK TIMEOUT: Failed to acquire lock for reconciliation of product_id=#{kuralis_product.id}"
-
-      # Create a notification about the lock timeout
-      Notification.create!(
-        shop_id: kuralis_product.shop_id,
-        title: "Inventory System Warning",
-        message: "Failed to reconcile inventory for product '#{kuralis_product.title}' due to database contention",
-        category: "system",
-        status: "error",
-        metadata: {
-          product_id: kuralis_product.id,
-          error: "lock_timeout"
-        }
-      )
-    end
-  end
-
-  # New method to handle manual inventory adjustments by store owner
+  # Manual adjustment with proper locking
   def self.manual_adjustment(kuralis_product:, quantity_change:, notes:, user_id: nil)
     return unless kuralis_product && quantity_change
 
@@ -298,77 +100,281 @@ class InventoryService
       return false
     end
 
+    lock_key = "inventory_lock:#{kuralis_product.id}"
+
     begin
-      Timeout.timeout(LOCK_TIMEOUT) do
-        kuralis_product.with_lock do
-          InventoryTransaction.create!(
-            kuralis_product: kuralis_product,
-            quantity: quantity_change,
-            transaction_type: "manual_adjustment",
-            previous_quantity: kuralis_product.base_quantity,
-            new_quantity: kuralis_product.base_quantity + quantity_change,
-            notes: notes,
-            metadata: { user_id: user_id },
-            processed: false
-          )
-
-          new_quantity = kuralis_product.base_quantity + quantity_change
-
-          # Update the product with new quantity and appropriate status
-          update_data = {
-            base_quantity: new_quantity,
-            last_inventory_update: Time.current
-          }
-
-          # Update status based on new quantity
-          if new_quantity.zero? && kuralis_product.status == "active"
-            update_data[:status] = "completed"
-          elsif new_quantity.positive? && kuralis_product.status == "completed"
-            update_data[:status] = "active"
-          end
-
-          kuralis_product.update!(update_data)
-
-          # Schedule inventory processing
-          schedule_inventory_processing(kuralis_product)
-
-          true
-        end
+      redis_connection.lock_for_update(lock_key) do
+        manual_adjustment_atomic(kuralis_product, quantity_change, notes, user_id)
       end
     rescue Timeout::Error
-      Rails.logger.error "LOCK TIMEOUT: Failed to perform manual adjustment for product_id=#{kuralis_product.id}"
+      Rails.logger.error "LOCK TIMEOUT: Failed to acquire inventory lock for product_id=#{kuralis_product.id}"
+      false
+    rescue => e
+      Rails.logger.error "Error in manual adjustment: #{e.message}"
+      false
+    end
+  end
+
+  # Reconcile inventory across all platforms
+  def self.reconcile_inventory(kuralis_product:)
+    lock_key = "inventory_lock:#{kuralis_product.id}"
+
+    begin
+      redis_connection.lock_for_update(lock_key) do
+        InventoryReconciliationService.reconcile_with_platforms(kuralis_product)
+      end
+    rescue Timeout::Error
+      Rails.logger.error "LOCK TIMEOUT: Failed to acquire reconciliation lock for product_id=#{kuralis_product.id}"
+      false
+    rescue => e
+      Rails.logger.error "Error in inventory reconciliation: #{e.message}"
       false
     end
   end
 
   private
 
+  # Atomic allocation within a database transaction
+  def self.allocate_inventory_atomic(kuralis_product, quantity, order, order_item)
+    ActiveRecord::Base.transaction do
+      # Reload within transaction with lock
+      product = KuralisProduct.lock.find(kuralis_product.id)
+
+      # Ensure initial_quantity is set
+      ensure_initial_quantity_set(product)
+
+      # Check for existing transaction within lock
+      existing_transaction = InventoryTransaction.find_by(
+        kuralis_product: product,
+        order_item: order_item,
+        transaction_type: "allocation"
+      )
+
+      if existing_transaction
+        Rails.logger.info "Duplicate allocation detected for order_item_id=#{order_item.id}"
+        return existing_transaction
+      end
+
+      # Check if we have sufficient inventory
+      if product.base_quantity < quantity
+        # Create failed allocation transaction for tracking
+        failed_transaction = InventoryTransaction.create!(
+          kuralis_product: product,
+          order_item: order_item,
+          order: order,
+          quantity: -quantity,
+          transaction_type: "allocation_failed",
+          previous_quantity: product.base_quantity,
+          new_quantity: product.base_quantity,
+          notes: "Insufficient Inventory: Requested #{quantity}, Available #{product.base_quantity}",
+          processed: false
+        )
+
+        # Create notification
+        create_insufficient_inventory_notification(order, product, quantity)
+
+        # Schedule cross-platform sync for failed transaction (skip originating platform)
+        schedule_cross_platform_sync(product, order.platform)
+
+        raise InsufficientInventoryError, "Insufficient inventory: requested #{quantity}, available #{product.base_quantity}"
+      end
+
+      # Create successful allocation transaction
+      new_quantity = product.base_quantity - quantity
+      inventory_transaction = InventoryTransaction.create!(
+        kuralis_product: product,
+        order_item: order_item,
+        order: order,
+        quantity: -quantity,
+        transaction_type: "allocation",
+        previous_quantity: product.base_quantity,
+        new_quantity: new_quantity,
+        processed: false
+      )
+
+      # Update product with new quantity and status
+      update_data = {
+        base_quantity: new_quantity,
+        last_inventory_update: Time.current
+      }
+
+      # Mark as out-of-stock if needed
+      if new_quantity.zero?
+        update_data[:status] = "completed"
+      end
+
+      # Prevent the model callback from scheduling duplicate sync
+      product.instance_variable_set(:@skip_inventory_sync, true)
+      product.update!(update_data)
+
+      # Schedule cross-platform sync (async)
+      schedule_cross_platform_sync(product, order.platform)
+
+      inventory_transaction
+    end
+  end
+
+  # Atomic release within a database transaction
+  def self.release_inventory_atomic(kuralis_product, quantity, order, order_item)
+    ActiveRecord::Base.transaction do
+      # Reload within transaction with lock
+      product = KuralisProduct.lock.find(kuralis_product.id)
+
+      # Check for existing transaction
+      existing_transaction = InventoryTransaction.find_by(
+        kuralis_product: product,
+        order_item: order_item,
+        transaction_type: "release"
+      )
+
+      if existing_transaction
+        Rails.logger.info "Duplicate release detected for order_item_id=#{order_item.id}"
+        return existing_transaction
+      end
+
+      # Create release transaction
+      new_quantity = product.base_quantity + quantity
+      inventory_transaction = InventoryTransaction.create!(
+        kuralis_product: product,
+        order_item: order_item,
+        order: order,
+        quantity: quantity,
+        transaction_type: "release",
+        previous_quantity: product.base_quantity,
+        new_quantity: new_quantity,
+        processed: false
+      )
+
+      # Prevent the model callback from scheduling duplicate sync
+      product.instance_variable_set(:@skip_inventory_sync, true)
+
+      # Update product
+      product.update!(
+        base_quantity: new_quantity,
+        status: "active", # Reactivate when inventory is released
+        last_inventory_update: Time.current
+      )
+
+      # Schedule cross-platform sync
+      schedule_cross_platform_sync(product, order.platform)
+
+      inventory_transaction
+    end
+  end
+
+  # Atomic manual adjustment
+  def self.manual_adjustment_atomic(kuralis_product, quantity_change, notes, user_id)
+    ActiveRecord::Base.transaction do
+      product = KuralisProduct.lock.find(kuralis_product.id)
+
+      new_quantity = product.base_quantity + quantity_change
+
+      InventoryTransaction.create!(
+        kuralis_product: product,
+        quantity: quantity_change,
+        transaction_type: "manual_adjustment",
+        previous_quantity: product.base_quantity,
+        new_quantity: new_quantity,
+        notes: notes,
+        processed: false
+      )
+
+      # Update status based on new quantity
+      update_data = {
+        base_quantity: new_quantity,
+        last_inventory_update: Time.current
+      }
+
+      if new_quantity.zero? && product.status == "active"
+        update_data[:status] = "completed"
+      elsif new_quantity.positive? && product.status == "completed"
+        update_data[:status] = "active"
+      end
+
+      # Prevent the model callback from scheduling duplicate sync
+      product.instance_variable_set(:@skip_inventory_sync, true)
+      product.update!(update_data)
+
+      # Schedule cross-platform sync (manual adjustments sync all platforms)
+      # This is intentional - manual adjustments should update all platforms
+      schedule_cross_platform_sync(product, nil)
+
+      true
+    end
+  end
+
+  # Generate idempotency key for operations
+  def self.generate_idempotency_key(order, order_item, operation)
+    "#{operation}:#{order.platform}:#{order.platform_order_id}:#{order_item.platform_item_id}:#{order_item.quantity}"
+  end
+
+  # Create notification for insufficient inventory
+  def self.create_insufficient_inventory_notification(order, product, requested_quantity)
+    Notification.create!(
+      shop_id: order.shop_id,
+      title: "Insufficient Inventory",
+      message: "Order ##{order.platform_order_id} requires #{requested_quantity} units of '#{product.title}' but only #{product.base_quantity} available",
+      category: "inventory",
+      status: "warning",
+      metadata: {
+        order_id: order.id,
+        product_id: product.id,
+        requested: requested_quantity,
+        available: product.base_quantity,
+        platform: order.platform
+      }
+    )
+  end
+
+  # Schedule cross-platform inventory sync with deduplication
+  def self.schedule_cross_platform_sync(kuralis_product, skip_platform)
+    # Use a unique job key to prevent duplicate jobs for the same product
+    job_key = "sync_inventory_#{kuralis_product.id}_#{skip_platform}"
+
+    # Cancel any existing job for this product/platform combo
+    Rails.cache.delete("scheduled_job:#{job_key}")
+
+    # Schedule new job with small delay to allow for transaction completion
+    job_id = CrossPlatformInventorySyncJob.set(
+      wait: 3.seconds,
+      queue: "inventory"
+    ).perform_later(
+      kuralis_product.shop_id,
+      kuralis_product.id,
+      skip_platform
+    )
+
+    # Cache the job ID briefly to prevent duplicates
+    Rails.cache.write("scheduled_job:#{job_key}", job_id, expires_in: 30.seconds)
+
+    Rails.logger.info "Scheduled CrossPlatformInventorySyncJob for product_id=#{kuralis_product.id}, skip_platform=#{skip_platform}"
+  end
+
+  # Legacy method for backward compatibility
+  def self.schedule_inventory_processing(kuralis_product)
+    ProcessInventoryTransactionsJob.set(wait: 5.seconds).perform_later(
+      kuralis_product.shop_id,
+      kuralis_product.id
+    )
+  end
+
+  # Ensure initial quantity is set
   def self.ensure_initial_quantity_set(kuralis_product)
-    # If initial_quantity isn't set, set it to the current base_quantity
     if kuralis_product.initial_quantity.nil?
       kuralis_product.update_column(:initial_quantity, kuralis_product.base_quantity)
       Rails.logger.info "Set initial_quantity=#{kuralis_product.base_quantity} for product_id=#{kuralis_product.id}"
     end
   end
 
+  # Calculate expected quantity from transactions
   def self.calculate_expected_quantity(kuralis_product)
     initial_quantity = kuralis_product.initial_quantity || 0
-
-    # We need to filter by successful transaction types, excluding failed attempts and reconciliations
     valid_transaction_types = [ "allocation", "release", "manual_adjustment" ]
 
-    # Calculate total from all valid transactions
     transaction_total = kuralis_product.inventory_transactions
                                       .where(transaction_type: valid_transaction_types)
                                       .sum(:quantity)
 
-    # Initial quantity + all transaction changes
-    [ initial_quantity + transaction_total, 0 ].max # Ensure we never calculate negative inventory
-  end
-
-  # Schedule the background job to process inventory transactions
-  def self.schedule_inventory_processing(kuralis_product)
-    # Use deliver_later to prevent transaction interference
-    ProcessInventoryTransactionsJob.set(wait: 5.seconds).perform_later(kuralis_product.shop_id, kuralis_product.id)
+    [ initial_quantity + transaction_total, 0 ].max
   end
 end

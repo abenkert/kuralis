@@ -1,4 +1,5 @@
 require "tempfile"
+require "net/http"
 
 module Shopify
   class BatchCreateListingsJob < ApplicationJob
