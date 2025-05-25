@@ -3,9 +3,9 @@ require "net/http"
 class CrossPlatformInventorySyncJob < ApplicationJob
   queue_as :inventory
 
-  # Retry configuration with exponential backoff
-  retry_on StandardError, wait: :exponentially_longer, attempts: 5
-  retry_on InventoryService::PlatformSyncError, wait: :exponentially_longer, attempts: 3
+  # Retry configuration with polynomial backoff
+  retry_on StandardError, wait: :polynomially_longer, attempts: 5
+  retry_on InventoryService::PlatformSyncError, wait: :polynomially_longer, attempts: 3
 
   # Specific handling for network-related errors
   retry_on Net::OpenTimeout, Net::ReadTimeout, wait: 30.seconds, attempts: 3
@@ -135,8 +135,16 @@ class CrossPlatformInventorySyncJob < ApplicationJob
 
     # Update internal eBay listing record
     if @kuralis_product.ebay_listing.present?
-      @kuralis_product.ebay_listing.update!(
+      ebay_listing = @kuralis_product.ebay_listing
+
+      # Calculate the new total_quantity to maintain the validation constraint
+      # quantity = total_quantity - quantity_sold
+      # Therefore: total_quantity = quantity + quantity_sold
+      new_total_quantity = @kuralis_product.base_quantity + ebay_listing.quantity_sold
+
+      ebay_listing.update!(
         quantity: @kuralis_product.base_quantity,
+        total_quantity: new_total_quantity,
         sale_price: @kuralis_product.base_price,
         ebay_status: @kuralis_product.status == "active" ? "active" : "completed"
       )

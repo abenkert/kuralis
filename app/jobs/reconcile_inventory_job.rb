@@ -5,7 +5,7 @@ class ReconcileInventoryJob < ApplicationJob
   BATCH_SIZE = 100
 
   # Retry options specific to this job
-  retry_on StandardError, wait: :exponentially_longer, attempts: 3
+  retry_on StandardError, wait: :polynomially_longer, attempts: 3
 
   def perform(shop_id = nil, options = {})
     # Track start time for performance monitoring

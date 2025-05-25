@@ -24,8 +24,15 @@ module Ebay
 
       if result[:success]
         Rails.logger.info "Successfully updated eBay listing #{@ebay_listing.ebay_item_id}"
+
+        # Calculate the new total_quantity to maintain the validation constraint
+        # quantity = total_quantity - quantity_sold
+        # Therefore: total_quantity = quantity + quantity_sold
+        new_total_quantity = @product.base_quantity + @ebay_listing.quantity_sold
+
         @ebay_listing.update(
           quantity: @product.base_quantity,
+          total_quantity: new_total_quantity,
           ebay_status: "active"
         )
         true
