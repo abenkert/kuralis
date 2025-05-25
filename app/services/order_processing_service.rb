@@ -318,10 +318,18 @@ class OrderProcessingService
     platform_order_id = extract_platform_order_id
     line_items = extract_line_items
 
+    # Include fulfillment status to allow status updates
+    fulfillment_status = case @platform
+    when "ebay"
+      @order_data["orderFulfillmentStatus"]
+    when "shopify"
+      @order_data["displayFulfillmentStatus"]
+    end
+
     # Include item count and total to detect order modifications
     items_hash = Digest::MD5.hexdigest(line_items.to_json)
 
-    "order:#{@platform}:#{platform_order_id}:#{items_hash}"
+    "order:#{@platform}:#{platform_order_id}:#{items_hash}:#{fulfillment_status}"
   end
 
   def extract_id_from_gid(gid)

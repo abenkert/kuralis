@@ -31,7 +31,7 @@ Rails.application.configure do
   end
 
   # Change to :null_store to avoid any caching.
-  config.cache_store = :memory_store
+  config.cache_store = :redis_cache_store, { url: ENV["REDIS_URL"] || "redis://localhost:6379/0" }
 
   # Store uploaded files on the local file system (see config/storage.yml for options).
   config.active_storage.service = :amazon
@@ -43,7 +43,7 @@ Rails.application.configure do
   config.action_mailer.perform_caching = false
 
   # Set localhost to be used by links generated in mailer templates.
-  config.action_mailer.default_url_options = { host: 'localhost', port: 3000 }
+  config.action_mailer.default_url_options = { host: "localhost", port: 3000 }
 
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
@@ -85,6 +85,6 @@ Rails.application.configure do
   # Set your application's domain name
   # Rails.application.routes.default_url_options[:host] = 'kuralis.com'
   # config.action_mailer.default_url_options = { host: 'kuralis.com' }
-  Rails.application.routes.default_url_options[:host] = 'heroic-wahoo-new.ngrok-free.app'
-  config.action_mailer.default_url_options = { host: 'heroic-wahoo-new.ngrok-free.app' }
+  Rails.application.routes.default_url_options[:host] = "heroic-wahoo-new.ngrok-free.app"
+  config.action_mailer.default_url_options = { host: "heroic-wahoo-new.ngrok-free.app" }
 end

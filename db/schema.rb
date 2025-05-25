@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_04_17_182950) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_25_010314) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -99,10 +99,15 @@ ActiveRecord::Schema[8.0].define(version: 2025_04_17_182950) do
     t.string "store_category_id"
     t.string "payment_profile_id"
     t.string "return_profile_id"
+    t.integer "total_quantity", default: 0, null: false
+    t.integer "quantity_sold", default: 0, null: false
     t.index ["payment_profile_id"], name: "index_ebay_listings_on_payment_profile_id"
+    t.index ["quantity_sold"], name: "index_ebay_listings_on_quantity_sold"
     t.index ["return_profile_id"], name: "index_ebay_listings_on_return_profile_id"
     t.index ["shopify_ebay_account_id"], name: "index_ebay_listings_on_shopify_ebay_account_id"
     t.index ["store_category_id"], name: "index_ebay_listings_on_store_category_id"
+    t.index ["total_quantity"], name: "index_ebay_listings_on_total_quantity"
+    t.check_constraint "quantity_sold <= total_quantity", name: "quantity_sold_not_greater_than_total"
   end
 
   create_table "ebay_product_attributes", force: :cascade do |t|

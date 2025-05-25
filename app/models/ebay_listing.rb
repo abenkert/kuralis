@@ -22,6 +22,15 @@ class EbayListing < ApplicationRecord
 
   validates :ebay_item_id, presence: true,
             uniqueness: { scope: :shopify_ebay_account_id }
+  validates :total_quantity, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :quantity_sold, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :quantity, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+
+  # Custom validation to ensure quantity_sold doesn't exceed total_quantity
+  validate :quantity_sold_not_greater_than_total
+
+  # Custom validation to ensure available quantity matches calculation
+  validate :available_quantity_matches_calculation
   #   validates :sale_price, numericality: { greater_than_or_equal_to: 0 },
   #             allow_nil: true
   #   validates :original_price, numericality: { greater_than_or_equal_to: 0 },
@@ -172,5 +181,51 @@ class EbayListing < ApplicationRecord
     end
 
     high_quality_urls
+  end
+
+  # Custom validation to ensure quantity_sold doesn't exceed total_quantity
+  def quantity_sold_not_greater_than_total
+    if quantity_sold > total_quantity
+      errors.add(:quantity_sold, "cannot exceed total_quantity")
+    end
+  end
+
+  # Custom validation to ensure available quantity matches calculation
+  def available_quantity_matches_calculation
+    if quantity != total_quantity - quantity_sold
+      errors.add(:quantity, "must match the calculation of total_quantity minus quantity_sold")
+    end
+  end
+
+  # Quantity tracking helper methods
+  def available_quantity
+    quantity
+  end
+
+  def sold_percentage
+    return 0 if total_quantity.zero?
+    (quantity_sold.to_f / total_quantity * 100).round(2)
+  end
+
+  def has_sales?
+    quantity_sold > 0
+  end
+
+  def out_of_stock?
+    quantity.zero?
+  end
+
+  def low_stock?(threshold = 5)
+    quantity <= threshold && quantity > 0
+  end
+
+  def quantity_status
+    if out_of_stock?
+      "Out of Stock"
+    elsif low_stock?
+      "Low Stock"
+    else
+      "In Stock"
+    end
   end
 end

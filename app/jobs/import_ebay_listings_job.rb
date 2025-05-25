@@ -165,13 +165,31 @@ class ImportEbayListingsJob < ApplicationJob
         # ending_reason = item.at_xpath(".//ns:ListingDetails/ns:EndingReason", namespaces)&.text
         location = find_location(description)
 
+        # Calculate available quantity (total quantity minus sold quantity)
+        total_quantity = item.at_xpath(".//ns:Quantity", namespaces)&.text&.to_i || 0
+        quantity_sold = item.at_xpath(".//ns:SellingStatus/ns:QuantitySold", namespaces)&.text&.to_i || 0
+        available_quantity = [ total_quantity - quantity_sold, 0 ].max # Ensure non-negative
+
+        # Log quantity calculation for debugging
+        if quantity_sold > 0
+          Rails.logger.info("eBay Item #{ebay_item_id}: Total=#{total_quantity}, Sold=#{quantity_sold}, Available=#{available_quantity}")
+        end
+
+        # Validate quantity calculation
+        if available_quantity < 0
+          Rails.logger.warn("eBay Item #{ebay_item_id}: Negative available quantity calculated (#{available_quantity}), setting to 0")
+          available_quantity = 0
+        end
+
         # Update the existing listing
         listing.assign_attributes({
           title: item.at_xpath(".//ns:Title", namespaces)&.text,
           description: description,
           sale_price: item.at_xpath(".//ns:SellingStatus/ns:CurrentPrice", namespaces)&.text&.to_d,
           original_price: item.at_xpath(".//ns:StartPrice", namespaces)&.text&.to_d,
-          quantity: item.at_xpath(".//ns:Quantity", namespaces)&.text&.to_i,
+          quantity: available_quantity,
+          total_quantity: total_quantity,
+          quantity_sold: quantity_sold,
           shipping_profile_id: item.at_xpath(".//ns:SellerProfiles/ns:SellerShippingProfile/ns:ShippingProfileID", namespaces)&.text,
           location: location,
           image_urls: extract_image_urls(item, namespaces),
