@@ -2,7 +2,7 @@
   <!-- Header Section with Store Overview -->
   <div class="row mb-4">
     <div class="col-12">
-      <div class="card border-0 shadow-sm bg-primary text-white">
+      <div class="card border-0 shadow-sm bg-primary text-white dashboard-header">
         <div class="card-body py-4">
           <div class="d-flex justify-content-between align-items-center">
             <div>
@@ -10,15 +10,18 @@
               <p class="mb-0 opacity-75">Dashboard Overview • <%= Date.today.strftime("%B %d, %Y") %></p>
             </div>
             <div class="d-flex gap-2">
+              <%= link_to dashboard_path, class: "btn btn-outline-light", title: "Refresh Dashboard" do %>
+                <i class="bi bi-arrow-clockwise"></i>
+              <% end %>
               <div class="dropdown">
                 <button class="btn btn-light dropdown-toggle" type="button" id="quickActions" data-bs-toggle="dropdown" aria-expanded="false">
                   <i class="bi bi-lightning-charge-fill me-1"></i> Quick Actions
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="quickActions">
                   <li><%= link_to "Add New Product", new_kuralis_product_path, class: "dropdown-item" %></li>
-                  <li><%= link_to "Import Products", '#', class: "dropdown-item" %></li>
+                  <li><%= link_to "Sync Orders", orders_path(trigger_sync: true), method: :post, class: "dropdown-item" %></li>
                   <li><hr class="dropdown-divider"></li>
-                  <li><%= link_to "Settings", '#', class: "dropdown-item" %></li>
+                  <li><%= link_to "Settings", settings_path, class: "dropdown-item" %></li>
                 </ul>
               </div>
             </div>
@@ -31,7 +34,7 @@
   <!-- Key Metrics Row -->
   <div class="row mb-4">
     <div class="col-md-3">
-      <div class="card border-0 shadow-sm h-100">
+      <div class="card border-0 shadow-sm h-100 hover-lift">
         <div class="card-body">
           <div class="d-flex align-items-center mb-3">
             <div class="d-flex justify-content-center align-items-center rounded-circle me-3" 
@@ -70,7 +73,7 @@
       </div>
     </div>
     <div class="col-md-3">
-      <div class="card border-0 shadow-sm h-100">
+      <div class="card border-0 shadow-sm h-100 hover-lift">
         <div class="card-body">
           <div class="d-flex align-items-center mb-3">
             <div class="d-flex justify-content-center align-items-center rounded-circle me-3" 
@@ -90,7 +93,7 @@
       </div>
     </div>
     <div class="col-md-3">
-      <div class="card border-0 shadow-sm h-100">
+      <div class="card border-0 shadow-sm h-100 hover-lift">
         <div class="card-body">
           <div class="d-flex align-items-center mb-3">
             <div class="d-flex justify-content-center align-items-center rounded-circle me-3" 
@@ -104,6 +107,45 @@
           </div>
           <div class="progress" style="height: 4px;">
             <div class="progress-bar bg-info" role="progressbar" style="width: 100%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inventory Summary Row -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-0 py-3">
+          <h5 class="mb-0">Inventory Overview</h5>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-3">
+              <div class="text-center">
+                <h3 class="text-primary mb-1"><%= number_to_currency(@shop.inventory_summary[:total_value]) %></h3>
+                <p class="text-muted mb-0 small">Total Inventory Value</p>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h3 class="text-success mb-1"><%= @shop.inventory_summary[:total_quantity] %></h3>
+                <p class="text-muted mb-0 small">Total Units</p>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h3 class="text-info mb-1"><%= number_to_currency(@shop.inventory_summary[:avg_price]) %></h3>
+                <p class="text-muted mb-0 small">Average Price</p>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h3 class="text-warning mb-1"><%= @shop.platform_sync_status[:shopify] %>% / <%= @shop.platform_sync_status[:ebay] %>%</h3>
+                <p class="text-muted mb-0 small">Shopify / eBay Sync</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -129,7 +171,7 @@
           <div class="row align-items-center">
             <div class="col-md-4">
               <!-- Low Stock Alert -->
-              <div class="mb-3 p-3 bg-light rounded-3">
+              <div class="mb-3 p-3 bg-light rounded-3 inventory-alert">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <div class="d-flex align-items-center">
                     <div class="d-flex justify-content-center align-items-center rounded-circle me-2" 
@@ -139,16 +181,16 @@
                     <h6 class="mb-0">Low Stock Items</h6>
                   </div>
                   <span class="badge" style="background: rgba(220, 38, 38, 0.1); color: #dc2626; font-weight: 500; padding: 6px 12px; border-radius: 50px;">
-                    <%= rand(1..5) %>
+                    <%= @inventory_health[:low_stock_count] %>
                   </span>
                 </div>
                 <div class="progress" style="height: 6px;">
-                  <div class="progress-bar" style="width: <%= rand(10..25) %>%; background: linear-gradient(to right, #b91c1c, #ef4444);"></div>
+                  <div class="progress-bar" style="width: <%= @inventory_health[:total_products] > 0 ? (@inventory_health[:low_stock_count].to_f / @inventory_health[:total_products] * 100).round : 0 %>%; background: linear-gradient(to right, #b91c1c, #ef4444);"></div>
                 </div>
               </div>
               
               <!-- Out of Stock Alert -->
-              <div class="mb-3 p-3 bg-light rounded-3">
+              <div class="mb-3 p-3 bg-light rounded-3 inventory-alert">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <div class="d-flex align-items-center">
                     <div class="d-flex justify-content-center align-items-center rounded-circle me-2" 
@@ -158,16 +200,16 @@
                     <h6 class="mb-0">Out of Stock</h6>
                   </div>
                   <span class="badge" style="background: rgba(75, 85, 99, 0.1); color: #4b5563; font-weight: 500; padding: 6px 12px; border-radius: 50px;">
-                    <%= rand(0..3) %>
+                    <%= @inventory_health[:out_of_stock_count] %>
                   </span>
                 </div>
                 <div class="progress" style="height: 6px;">
-                  <div class="progress-bar" style="width: <%= rand(5..15) %>%; background: linear-gradient(to right, #4b5563, #6b7280);"></div>
+                  <div class="progress-bar" style="width: <%= @inventory_health[:total_products] > 0 ? (@inventory_health[:out_of_stock_count].to_f / @inventory_health[:total_products] * 100).round : 0 %>%; background: linear-gradient(to right, #4b5563, #6b7280);"></div>
                 </div>
               </div>
               
               <!-- Price Inconsistencies Alert -->
-              <div class="p-3 bg-light rounded-3">
+              <div class="p-3 bg-light rounded-3 inventory-alert">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <div class="d-flex align-items-center">
                     <div class="d-flex justify-content-center align-items-center rounded-circle me-2" 
@@ -177,11 +219,11 @@
                     <h6 class="mb-0">Price Inconsistencies</h6>
                   </div>
                   <span class="badge" style="background: rgba(245, 158, 11, 0.1); color: #b45309; font-weight: 500; padding: 6px 12px; border-radius: 50px;">
-                    <%= rand(0..4) %>
+                    <%= @inventory_health[:price_inconsistencies_count] %>
                   </span>
                 </div>
                 <div class="progress" style="height: 6px;">
-                  <div class="progress-bar" style="width: <%= rand(5..20) %>%; background: linear-gradient(to right, #b45309, #f59e0b);"></div>
+                  <div class="progress-bar" style="width: <%= @inventory_health[:total_products] > 0 ? (@inventory_health[:price_inconsistencies_count].to_f / @inventory_health[:total_products] * 100).round : 0 %>%; background: linear-gradient(to right, #b45309, #f59e0b);"></div>
                 </div>
               </div>
             </div>
@@ -198,69 +240,38 @@
         <div class="card-header bg-white border-0 py-3">
           <div class="d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Recent Activity</h5>
-            <a href="#" class="text-decoration-none">View All</a>
+            <%= link_to "View All", orders_path, class: "text-decoration-none" %>
           </div>
         </div>
         <div class="card-body p-0">
           <div class="list-group list-group-flush">
-            <% @shop.recent_orders.each do |order| %>
-              <div class="list-group-item p-3 border-0 border-bottom">
+            <% @recent_activity.each do |activity| %>
+              <div class="list-group-item p-3 border-0 border-bottom activity-item">
                 <div class="d-flex align-items-center">
                   <div class="d-flex justify-content-center align-items-center rounded-circle me-3" 
-                       style="width: 40px; height: 40px; background: <%= order.platform == 'shopify' ? 'linear-gradient(135deg, #13795b, #25a97a)' : 'linear-gradient(135deg, #e6a100, #ffc107)' %>; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <i class="bi <%= order.platform == 'shopify' ? 'bi-shop' : 'bi-tags' %> text-white"></i>
+                       style="width: 40px; height: 40px; background: <%= activity_background_color(activity[:platform]) %>; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <i class="bi <%= activity[:icon] %> text-white"></i>
                   </div>
                   <div class="flex-grow-1">
                     <div class="d-flex justify-content-between align-items-center">
-                      <h6 class="mb-0">Order #<%= order.platform_order_id %></h6>
-                      <span class="badge" style="background: <%= order.platform == 'shopify' ? 'rgba(25, 135, 84, 0.1)' : 'rgba(255, 193, 7, 0.1)' %>; color: <%= order.platform == 'shopify' ? '#198754' : '#997404' %>; font-weight: 500; padding: 6px 12px; border-radius: 50px;">
-                        <%= order.platform.titleize %>
+                      <h6 class="mb-0"><%= activity[:title] %></h6>
+                      <span class="badge" style="background: <%= activity_badge_background(activity[:platform]) %>; color: <%= activity_badge_color(activity[:platform]) %>; font-weight: 500; padding: 6px 12px; border-radius: 50px;">
+                        <%= activity[:platform].titleize %>
                       </span>
                     </div>
                     <p class="text-muted mb-0 small">
-                      <%= order.customer_name %> • <%= number_to_currency(order.total_price) %> • <%= time_ago_in_words(order.created_at) %> ago
+                      <%= activity[:description] %>
                     </p>
                   </div>
                 </div>
               </div>
             <% end %>
             
-            <!-- Additional activity types -->
-            <div class="list-group-item p-3 border-0 border-bottom">
-              <div class="d-flex align-items-center">
-                <div class="d-flex justify-content-center align-items-center rounded-circle me-3" 
-                     style="width: 40px; height: 40px; background: linear-gradient(135deg, #0d6efd, #5a9cff); box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                  <i class="bi bi-arrow-repeat text-white"></i>
-                </div>
-                <div class="flex-grow-1">
-                  <div class="d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0">Inventory Sync Completed</h6>
-                    <span class="badge" style="background: rgba(13, 110, 253, 0.1); color: #0d6efd; font-weight: 500; padding: 6px 12px; border-radius: 50px;">
-                      System
-                    </span>
-                  </div>
-                  <p class="text-muted mb-0 small">23 products updated • 2 hours ago</p>
-                </div>
+            <% if @recent_activity.empty? %>
+              <div class="list-group-item p-3 border-0 text-center">
+                <p class="text-muted mb-0">No recent activity to display</p>
               </div>
-            </div>
-            
-            <div class="list-group-item p-3 border-0 border-bottom">
-              <div class="d-flex align-items-center">
-                <div class="d-flex justify-content-center align-items-center rounded-circle me-3" 
-                     style="width: 40px; height: 40px; background: linear-gradient(135deg, #6f42c1, #9a71d2); box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                  <i class="bi bi-plus-circle text-white"></i>
-                </div>
-                <div class="flex-grow-1">
-                  <div class="d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0">New Product Added</h6>
-                    <span class="badge" style="background: rgba(111, 66, 193, 0.1); color: #6f42c1; font-weight: 500; padding: 6px 12px; border-radius: 50px;">
-                      Admin
-                    </span>
-                  </div>
-                  <p class="text-muted mb-0 small">Vintage Leather Jacket • 5 hours ago</p>
-                </div>
-              </div>
-            </div>
+            <% end %>
           </div>
         </div>
       </div>
@@ -323,7 +334,7 @@
         </div>
         <div class="card-body">
           <div class="d-grid gap-2">
-            <%= link_to kuralis_products_path, class: "btn btn-outline-success d-flex align-items-center justify-content-between p-3" do %>
+            <%= link_to kuralis_products_path, class: "btn btn-outline-success d-flex align-items-center justify-content-between p-3 quick-action-btn" do %>
               <div>
                 <i class="bi bi-box me-2"></i>
                 <span>All Products</span>
@@ -331,7 +342,7 @@
               <i class="bi bi-chevron-right"></i>
             <% end %>
 
-            <%= link_to shopify_products_path, class: "btn btn-outline-primary d-flex align-items-center justify-content-between p-3" do %>
+            <%= link_to shopify_products_path, class: "btn btn-outline-primary d-flex align-items-center justify-content-between p-3 quick-action-btn" do %>
               <div>
                 <i class="bi bi-shop me-2"></i>
                 <span>Shopify Products</span>
@@ -339,7 +350,7 @@
               <i class="bi bi-chevron-right"></i>
             <% end %>
             
-            <%= link_to ebay_listings_path, class: "btn btn-outline-warning d-flex align-items-center justify-content-between p-3" do %>
+            <%= link_to ebay_listings_path, class: "btn btn-outline-warning d-flex align-items-center justify-content-between p-3 quick-action-btn" do %>
               <div>
                 <i class="bi bi-tags me-2"></i>
                 <span>eBay Listings</span>
@@ -347,7 +358,7 @@
               <i class="bi bi-chevron-right"></i>
             <% end %>
             
-            <%= link_to settings_path, class: "btn btn-outline-secondary d-flex align-items-center justify-content-between p-3" do %>
+            <%= link_to settings_path, class: "btn btn-outline-secondary d-flex align-items-center justify-content-between p-3 quick-action-btn" do %>
               <div>
                 <i class="bi bi-gear me-2"></i>
                 <span>Settings</span>
@@ -430,21 +441,17 @@
       
       const trendsCtx = trendsCanvas.getContext('2d');
       
-      // Sample data - replace with actual API data in production
-      const labels = Array.from({length: 7}, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - 6 + i);
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      });
+      // Use real inventory trends data from the controller
+      const trendsData = <%= raw @inventory_trends_data.to_json %>;
       
       trendsCanvas.chart = new Chart(trendsCtx, {
         type: 'line',
         data: {
-          labels: labels,
+          labels: trendsData.labels,
           datasets: [
             {
               label: 'Shopify Inventory',
-              data: [65, 68, 72, 70, 73, 76, 78],
+              data: trendsData.shopify_data,
               borderColor: '#198754',
               backgroundColor: 'rgba(25, 135, 84, 0.1)',
               tension: 0.4,
@@ -452,7 +459,7 @@
             },
             {
               label: 'eBay Inventory',
-              data: [43, 46, 48, 52, 54, 59, 62],
+              data: trendsData.ebay_data,
               borderColor: '#ffc107',
               backgroundColor: 'rgba(255, 193, 7, 0.1)',
               tension: 0.4,

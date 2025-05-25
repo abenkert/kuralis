@@ -1,0 +1,116 @@
+/* Dashboard specific styles */
+
+.hover-lift {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.metric-card {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.metric-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.activity-item {
+  transition: background-color 0.2s ease-in-out;
+}
+
+.activity-item:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.progress-bar {
+  border-radius: 3px;
+}
+
+.chart-container {
+  position: relative;
+  height: 220px;
+}
+
+.dashboard-header {
+  background: linear-gradient(135deg, #0143a3, #0d6efd);
+  border-radius: 12px;
+}
+
+.inventory-alert {
+  border-radius: 8px;
+  transition: all 0.2s ease-in-out;
+}
+
+.inventory-alert:hover {
+  transform: scale(1.02);
+}
+
+.quick-action-btn {
+  transition: all 0.2s ease-in-out;
+  border-radius: 8px;
+}
+
+.quick-action-btn:hover {
+  transform: translateX(4px);
+}
+
+.card {
+  border-radius: 12px;
+}
+
+.card-header {
+  border-radius: 12px 12px 0 0 !important;
+}
+
+/* Loading states */
+.loading-skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+  .metric-card {
+    margin-bottom: 1rem;
+  }
+  
+  .chart-container {
+    height: 180px;
+  }
+  
+  .dashboard-header h2 {
+    font-size: 1.5rem;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .card {
+    background-color: #1a1a1a;
+    border-color: #333;
+  }
+  
+  .activity-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+} 

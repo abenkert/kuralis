@@ -62,6 +62,26 @@ class Shop < ApplicationRecord
     }
   end
 
+  def inventory_summary
+    products = kuralis_products.active
+    {
+      total_value: products.sum("base_price * base_quantity"),
+      avg_price: products.average(:base_price)&.round(2) || 0,
+      total_quantity: products.sum(:base_quantity),
+      low_stock_threshold: 5
+    }
+  end
+
+  def platform_sync_status
+    total_products = kuralis_products.active.count
+    return { shopify: 0, ebay: 0 } if total_products.zero?
+
+    {
+      shopify: ((shopify_products.count.to_f / total_products) * 100).round,
+      ebay: ((ebay_listings_count.to_f / total_products) * 100).round
+    }
+  end
+
   def get_setting(category, key)
     KuralisShopSetting.get_setting(self, category, key)
   end
