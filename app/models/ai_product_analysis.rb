@@ -21,6 +21,9 @@ class AiProductAnalysis < ApplicationRecord
     left_joins(:kuralis_product)
       .where("kuralis_products.id IS NULL OR kuralis_products.is_draft = ?", false)
   }
+  scope :high_confidence, -> { completed.where("results->>'ebay_category_confidence' > '0.8'") }
+  scope :low_confidence, -> { completed.where("results->>'ebay_category_confidence' < '0.5'") }
+  scope :needs_review, -> { completed.where("results->>'requires_category_review' = 'true' OR results->>'requires_specifics_review' = 'true'") }
 
   # Virtual attribute for error message
   attr_accessor :error_message
@@ -143,10 +146,6 @@ class AiProductAnalysis < ApplicationRecord
     results&.dig("item_specifics") || {}
   end
 
-  def suggested_price
-    results&.dig("price")
-  end
-
   def suggested_publisher
     results&.dig("publisher")
   end
@@ -161,6 +160,50 @@ class AiProductAnalysis < ApplicationRecord
 
   def suggested_tags
     results&.dig("tags") || []
+  end
+
+  def suggested_category_confidence
+    results&.dig("ebay_category_confidence") || 0.0
+  end
+
+  def suggested_item_specifics_confidence
+    results&.dig("item_specifics_confidence") || 0.0
+  end
+
+  def missing_required_specifics
+    results&.dig("missing_required_specifics") || []
+  end
+
+  def requires_category_review?
+    results&.dig("requires_category_review") == true
+  end
+
+  def requires_specifics_review?
+    results&.dig("requires_specifics_review") == true
+  end
+
+  def category_confidence_level
+    confidence = suggested_category_confidence
+    case confidence
+    when 0.8..1.0
+      "high"
+    when 0.5..0.8
+      "medium"
+    else
+      "low"
+    end
+  end
+
+  def item_specifics_confidence_level
+    confidence = suggested_item_specifics_confidence
+    case confidence
+    when 0.8..1.0
+      "high"
+    when 0.5..0.8
+      "medium"
+    else
+      "low"
+    end
   end
 
   # Get error message from results if present

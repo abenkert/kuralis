@@ -19,12 +19,20 @@ class KuralisProduct < ApplicationRecord
 
   accepts_nested_attributes_for :ebay_product_attribute, reject_if: :all_blank
 
-  validates :title, presence: true
-  validates :description, presence: true
-  validates :base_price, numericality: { greater_than: 0 }, presence: true
+  # Validations for finalized products (stricter)
+  validates :title, presence: true, unless: :is_draft?
+  validates :description, presence: true, unless: :is_draft?
+  validates :base_price, numericality: { greater_than: 0 }, presence: true, unless: :is_draft?
   validates :base_quantity, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, presence: true
-  # validates :weight_oz, numericality: { greater_than: 0 }, presence: true
   validates :status, presence: true
+
+  # Relaxed validations for draft products
+  validates :title, presence: { message: "can't be blank for draft products" }, if: :is_draft?
+  validates :base_price, numericality: { greater_than: 0, allow_blank: true }, if: :is_draft?
+  # validates :weight_oz, numericality: { greater_than: 0 }, presence: true
+
+  # Custom validation to ensure finalized products are complete
+  validate :ensure_complete_for_finalization, if: -> { !is_draft? && will_save_change_to_is_draft? }
 
   # Scopes
   scope :active, -> { where(status: "active") }
@@ -33,6 +41,7 @@ class KuralisProduct < ApplicationRecord
   scope :from_ebay, -> { where(source_platform: "ebay") }
   scope :from_shopify, -> { where(source_platform: "shopify") }
   scope :unlinked, -> { where(shopify_product_id: nil, ebay_listing_id: nil) }
+  scope :recent, -> { order(created_at: :desc) }
 
   after_update :schedule_inventory_sync, if: -> { saved_change_to_base_quantity? && !@skip_inventory_sync }
   # after_update :schedule_general_updates, if: :should_update_platforms?
@@ -154,15 +163,45 @@ class KuralisProduct < ApplicationRecord
   end
 
   def finalize!
-    update!(is_draft: false)
+    self.is_draft = false
+    if valid?
+      save!
+    else
+      raise ActiveRecord::RecordInvalid.new(self)
+    end
+  end
+
+  # Check if draft can be finalized (has all required fields)
+  def can_finalize?
+    return true unless is_draft?
+
+    # Temporarily set is_draft to false to check if it would be valid
+    original_draft_status = is_draft
+    self.is_draft = false
+    is_valid = valid?
+    self.is_draft = original_draft_status
+
+    is_valid
+  end
+
+  # Get list of missing fields preventing finalization
+  def missing_fields_for_finalization
+    return [] unless is_draft?
+
+    missing = []
+    missing << "price" if base_price.blank?
+    missing << "description" if description.blank? || description == "Product description to be added"
+    missing << "title" if title.blank? || title == "Untitled Product"
+
+    missing
   end
 
   # Create a draft product from AI analysis
   def self.create_from_ai_analysis(analysis, shop)
     draft_product = shop.kuralis_products.new(
       title: analysis.suggested_title.presence || "Untitled Product",
-      description: analysis.suggested_description,
-      base_price: analysis.suggested_price,
+      description: analysis.suggested_description.presence || "Product description to be added",
+      base_price: nil, # Price will be set by user during finalization
       base_quantity: 1, # Default to 1 for draft products
       brand: analysis.suggested_brand,
       condition: analysis.suggested_condition,
@@ -321,5 +360,12 @@ class KuralisProduct < ApplicationRecord
   def images_changed?
     saved_changes.key?("id") || # new record
     images.any? { |image| image.blob.created_at > 1.minute.ago } # recently attached images
+  end
+
+  def ensure_complete_for_finalization
+    # When finalizing a draft, ensure all required fields are present
+    errors.add(:base_price, "must be present when finalizing product") if base_price.blank?
+    errors.add(:description, "must be present when finalizing product") if description.blank?
+    errors.add(:title, "must be present when finalizing product") if title.blank?
   end
 end

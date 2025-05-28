@@ -67,9 +67,9 @@
             <h6 class="font-weight-bold">How it works:</h6>
             <ol class="small text-muted">
               <li>Upload one or more product images</li>
-              <li>Our AI will analyze each image and extract product details</li>
-              <li>Review the AI suggestions and create draft products</li>
-              <li>Finalize draft products by editing and confirming details</li>
+              <li>Our AI analyzes each image and extracts product details</li>
+              <li>Draft products are automatically created from AI analysis</li>
+              <li>Review and finalize draft products to list them</li>
             </ol>
           </div>
         </div>
@@ -130,12 +130,8 @@
             <div class="tab-pane fade" id="completed" role="tabpanel" aria-labelledby="completed-tab">
               <% if @completed_analyses.any? %>
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h6 class="mb-0">Completed Analyses</h6>
-                  <%= link_to create_all_kuralis_draft_products_path, 
-                      class: "btn btn-primary btn-sm", 
-                      data: { turbo_method: :post, turbo_confirm: "Create draft products for all #{@completed_analyses.count} completed analyses?" } do %>
-                    <i class="fas fa-magic me-1"></i> Create All Drafts
-                  <% end %>
+                  <h6 class="mb-0">Recently Completed Analyses</h6>
+                  <small class="text-muted">Draft products are created automatically</small>
                 </div>
                 <div class="row">
                   <% @completed_analyses.each do |analysis| %>
@@ -149,7 +145,7 @@
                           </div>
                         <% end %>
                         <div class="analysis-status status-completed">
-                          Completed
+                          <i class="fas fa-check me-1"></i>Auto-Draft Created
                         </div>
                         <div class="p-3">
                           <h6 class="mb-2 font-weight-bold">
@@ -160,16 +156,44 @@
                           </p>
                           <div class="d-flex justify-content-between align-items-center">
                             <div>
-                              <span class="badge bg-info me-1"><%= analysis.suggested_brand %></span>
-                              <% if analysis.suggested_price.present? %>
-                                <span class="badge bg-success"><%= number_to_currency(analysis.suggested_price) %></span>
+                              <% if analysis.suggested_brand.present? %>
+                                <span class="badge bg-info me-1"><%= analysis.suggested_brand %></span>
+                              <% end %>
+                              <span class="badge bg-secondary">Price: TBD</span>
+                              <% if analysis.suggested_category_confidence > 0 %>
+                                <span class="badge bg-<%= analysis.category_confidence_level == 'high' ? 'success' : analysis.category_confidence_level == 'medium' ? 'warning' : 'danger' %> me-1">
+                                  Category: <%= (analysis.suggested_category_confidence * 100).round %>%
+                                </span>
+                              <% end %>
+                              <% if analysis.suggested_item_specifics_confidence > 0 %>
+                                <span class="badge bg-<%= analysis.item_specifics_confidence_level == 'high' ? 'success' : analysis.item_specifics_confidence_level == 'medium' ? 'warning' : 'danger' %> me-1">
+                                  Specifics: <%= (analysis.suggested_item_specifics_confidence * 100).round %>%
+                                </span>
+                              <% end %>
+                              <% if analysis.requires_category_review? %>
+                                <span class="badge bg-warning text-dark me-1">
+                                  <i class="fas fa-exclamation-triangle me-1"></i>Category Review
+                                </span>
+                              <% end %>
+                              <% if analysis.requires_specifics_review? %>
+                                <span class="badge bg-warning text-dark me-1">
+                                  <i class="fas fa-exclamation-triangle me-1"></i>Specifics Review
+                                </span>
+                              <% end %>
+                              <% if analysis.missing_required_specifics.any? %>
+                                <span class="badge bg-danger me-1" title="Missing: <%= analysis.missing_required_specifics.join(', ') %>">
+                                  <i class="fas fa-exclamation-circle me-1"></i><%= analysis.missing_required_specifics.size %> Missing
+                                </span>
                               <% end %>
                             </div>
-                            <div class="btn-group">
-                              <%= link_to kuralis_draft_products_path(analysis_id: analysis.id), 
-                                  class: "btn btn-sm btn-primary", 
-                                  data: { turbo_method: :post } do %>
-                                <i class="fas fa-plus me-1"></i> Create Draft
+                            <div>
+                              <% if analysis.has_draft_product? %>
+                                <%= link_to edit_kuralis_product_path(analysis.kuralis_product, finalize: true), 
+                                    class: "btn btn-sm btn-warning" do %>
+                                  <i class="fas fa-edit me-1"></i> Edit Draft
+                                <% end %>
+                              <% else %>
+                                <span class="badge bg-secondary">Processing...</span>
                               <% end %>
                             </div>
                           </div>
@@ -181,7 +205,8 @@
               <% else %>
                 <div class="text-center py-5">
                   <i class="fas fa-check-circle fa-3x text-muted mb-3"></i>
-                  <p class="mb-0">No completed analyses waiting for review.</p>
+                  <p class="mb-0">No recently completed analyses.</p>
+                  <p class="text-muted">Upload images to start the AI analysis process.</p>
                 </div>
               <% end %>
             </div>

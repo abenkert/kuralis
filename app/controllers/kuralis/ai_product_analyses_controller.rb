@@ -5,8 +5,9 @@ module Kuralis
     def index
       @pending_analyses = current_shop.ai_product_analyses.pending&.limit(10)
       @processing_analyses = current_shop.ai_product_analyses.processing&.limit(10)
-      @completed_analyses = current_shop.ai_product_analyses.completed.unprocessed&.limit(20)
-      @draft_products = current_shop.kuralis_products.draft&.limit(20)
+      # Show recently completed analyses (drafts are created automatically now)
+      @completed_analyses = current_shop.ai_product_analyses.completed.recent&.limit(20)
+      @draft_products = current_shop.kuralis_products.draft.recent&.limit(20)
     end
 
     def show

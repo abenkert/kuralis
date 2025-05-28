@@ -51,6 +51,8 @@ class EbayProductAttribute < ApplicationRecord
       return category_item_specifics if category_item_specifics.present?
 
        # Cache the results in the category metadata
+       # Default to EBAY_US marketplace since that's the primary marketplace used
+       marketplace_id = "EBAY_US"
        category = EbayCategory.find_by(category_id: category_id, marketplace_id: marketplace_id)
        if category.present?
         service = Ebay::TaxonomyService.new(shop.shopify_ebay_account)
