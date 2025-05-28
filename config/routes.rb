@@ -58,6 +58,11 @@ Rails.application.routes.draw do
       collection do
         post :create_all
         post :start_finalize_sequence
+        get :sequential_edit
+        patch :sequential_update
+        post :sequential_skip
+        delete :sequential_delete
+        post :exit_sequence
       end
     end
 
