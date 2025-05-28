@@ -163,11 +163,41 @@ class AiProductAnalysis < ApplicationRecord
   end
 
   def suggested_category_confidence
-    results&.dig("ebay_category_confidence") || 0.0
+    # Try new confidence_notes format first, fallback to old format
+    results&.dig("confidence_notes", "category_confidence") || results&.dig("ebay_category_confidence") || 0.0
   end
 
   def suggested_item_specifics_confidence
-    results&.dig("item_specifics_confidence") || 0.0
+    # Try new confidence_notes format first, fallback to old format
+    results&.dig("confidence_notes", "specifics_confidence") || results&.dig("item_specifics_confidence") || 0.0
+  end
+
+  def suggested_title_confidence
+    results&.dig("confidence_notes", "title_confidence") || 0.0
+  end
+
+  def suggested_brand_confidence
+    results&.dig("confidence_notes", "brand_confidence") || 0.0
+  end
+
+  def confidence_notes
+    results&.dig("confidence_notes") || {}
+  end
+
+  def overall_confidence_level
+    # Calculate overall confidence based on all available confidence scores
+    confidences = confidence_notes.values.compact
+    return "unknown" if confidences.empty?
+
+    avg_confidence = confidences.sum / confidences.length
+    case avg_confidence
+    when 0.8..1.0
+      "high"
+    when 0.6..0.8
+      "medium"
+    else
+      "low"
+    end
   end
 
   def missing_required_specifics

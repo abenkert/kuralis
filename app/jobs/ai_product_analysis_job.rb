@@ -100,29 +100,116 @@ class AiProductAnalysisJob < ApplicationJob
 
     # Enhanced prompt with relevant eBay category examples
     prompt = <<~PROMPT
-      Analyze this product image and provide detailed information. Return a JSON object with the following fields:
+      You are an expert product analyst specializing in accurate identification and categorization for eBay listings. Analyze this product image with extreme attention to detail and accuracy.
 
-      - title: Product title (be specific and descriptive)
-      - description: Detailed product description
-      - brand: Brand name if identifiable
-      - ebay_category_path: The EXACT eBay category path from the examples below
-      - item_specifics: Key-value pairs of product attributes relevant to the category
-      - tags: Array of relevant search tags
+      Return a JSON object with the following fields:
 
-      IMPORTANT EBAY CATEGORY GUIDELINES:
-      1. ONLY use category paths from the examples below - do NOT create new paths
-      2. Choose the MOST SPECIFIC category that fits the product
-      3. If unsure, choose a broader category rather than making up subcategories
-      4. For comics: Use "Collectibles > Comic Books & Memorabilia > Comics > Comics & Graphic Novels"
-      5. For collectibles: Start with "Collectibles > [appropriate subcategory]"
+      **CORE FIELDS:**
+      - title: Accurate, specific product title following category conventions
+      - description: Detailed description focusing on visible features and condition
+      - brand: Brand/manufacturer name (only if clearly visible or identifiable)
+      - ebay_category_path: EXACT category path from examples below
+      - item_specifics: Key-value pairs of product attributes (see category-specific guidance)
+      - tags: Array of relevant search terms
+      - confidence_notes: Object with confidence levels for each field (0.0-1.0)
 
-      RELEVANT EBAY CATEGORY EXAMPLES FOR THIS PRODUCT TYPE:
+      **ACCURACY GUIDELINES:**
+      1. ONLY state what you can clearly see or read in the image
+      2. Use "Unknown" or null for uncertain information - DO NOT GUESS
+      3. For text/numbers: Only include if clearly legible
+      4. Do NOT assess condition unless professionally graded or clearly marked - let users determine condition
+      5. Include confidence scores in confidence_notes for key identifications
+
+      **CATEGORY-SPECIFIC EXTRACTION RULES:**
+
+      **For Comics/Books:**
+      - Title format: "[Series Name] #[Issue] ([Year])" if visible
+      - Look for: Issue numbers, series names, publisher logos, publication dates
+      - Item specifics: Series Title, Issue Number, Publication Year, Publisher, Character(s)
+      - IMPORTANT: For Grade/Condition - ONLY provide if you can clearly see professional grading labels (CGC, CBCS, PGX slabs). Do NOT assess condition for raw/ungraded items - let the user determine condition
+      - Check spine, cover, and any visible text carefully
+
+      **For Electronics:**
+      - Title format: "[Brand] [Model] [Key Features]"
+      - Look for: Model numbers, brand logos, capacity/specs, condition indicators
+      - Item specifics: Brand, Model, Storage Capacity, Color, Connectivity
+      - Do NOT assess condition unless clearly marked (e.g., "Refurbished", "Open Box")
+
+      **For Clothing:**
+      - Title format: "[Brand] [Item Type] [Size] [Color/Pattern]"
+      - Look for: Size tags, brand labels, material tags, style details
+      - Item specifics: Brand, Size, Color, Material, Style
+      - Do NOT assess condition - let user determine wear level
+
+      **For Collectibles:**
+      - Title format: "[Brand/Series] [Character/Item] [Year/Edition]"#{' '}
+      - Look for: Series markings, character names, copyright dates, manufacturer marks
+      - Item specifics: Character, Series, Manufacturer, Year, Scale
+      - Only include condition if professionally graded or clearly marked
+
+      **EBAY CATEGORY SELECTION:**
+      Choose the MOST SPECIFIC category from these examples that matches the product:
       #{category_examples}
 
-      For item_specifics, provide attributes that are commonly required for the chosen category.
-      Do NOT suggest prices - pricing will be handled separately.
+      **ITEM SPECIFICS PRIORITY:**
+      Focus on attributes that are:
+      1. Clearly visible in the image
+      2. Commonly required for the chosen eBay category#{'  '}
+      3. Important for buyer decision-making
+      4. Accurately determinable from visual inspection
 
-      If you cannot determine some fields, use null values.
+      **CONDITION ASSESSMENT:**
+      Do NOT assess condition for most items - let users determine condition themselves.
+
+      ONLY include condition/grade information if:
+      - Professional grading labels are clearly visible (CGC, CBCS, PGX for comics)
+      - Items are clearly marked as "Refurbished", "Open Box", "New in Package", etc.
+      - Factory sealed items where packaging condition is obvious
+
+      **SPECIAL NOTE FOR COMICS:**
+      - ONLY provide numerical grades (9.8, 9.0, etc.) if you can see professional grading company labels (CGC, CBCS, PGX)
+      - Do NOT assess condition for raw (ungraded) comics - users will determine condition themselves
+      - Never guess or estimate professional grades for raw comics
+
+      **CONFIDENCE SCORING:**
+      In confidence_notes, provide 0.0-1.0 scores for:
+      - title_confidence: How certain you are about the title accuracy
+      - brand_confidence: Confidence in brand identification
+      - category_confidence: Certainty of category selection
+      - specifics_confidence: Overall confidence in item specifics
+
+      **IMPORTANT REMINDERS:**
+      - Do NOT suggest prices - pricing is handled separately
+      - Use null for any field you cannot determine with reasonable confidence
+      - Prioritize accuracy over completeness
+      - When in doubt, choose broader categories rather than guessing specific ones
+      - Include uncertainty indicators in descriptions when appropriate
+
+      **EXAMPLE RESPONSE FORMAT:**
+      ```json
+      {
+        "title": "Amazing Spider-Man #1 (1963) Marvel Comics",
+        "description": "Vintage Marvel comic book featuring the first appearance of Spider-Man. Published by Marvel Comics in 1963. This is a raw (ungraded) comic.",
+        "brand": "Marvel",
+        "ebay_category_path": "Collectibles > Comic Books & Memorabilia > Comics > Comics & Graphic Novels",
+        "item_specifics": {
+          "Series Title": "Amazing Spider-Man",
+          "Issue Number": "1",
+          "Publication Year": "1963",
+          "Publisher": "Marvel",
+          "Character": "Spider-Man"
+        },
+        "tags": ["spider-man", "marvel", "vintage", "comic", "1963", "key issue"],
+        "confidence_notes": {
+          "title_confidence": 0.9,
+          "brand_confidence": 0.95,
+          "category_confidence": 1.0,
+          "specifics_confidence": 0.85
+        }
+      }
+      ```
+
+      Analyze the image now and provide accurate, detailed information following these guidelines.
     PROMPT
 
     # Since the OpenAI service doesn't have a specific vision method,
@@ -170,7 +257,50 @@ class AiProductAnalysisJob < ApplicationJob
 
   # Quick analysis to determine product type for better category suggestions
   def determine_product_type(base64_image, openai_service)
-    quick_prompt = "Look at this image and identify the product type in 1-3 words. Examples: 'comic book', 'clothing', 'electronics', 'jewelry', 'toy', 'book', 'collectible', 'antique', 'art', 'musical instrument', 'automotive', 'home decor', 'sports equipment'. Respond with ONLY the product type."
+    quick_prompt = <<~PROMPT
+      Look at this image and identify the specific product type. Be as specific as possible while staying accurate.
+
+      Respond with ONLY the product type from this list (choose the most specific match):
+      - comic book
+      - manga
+      - graphic novel
+      - book
+      - magazine
+      - trading card
+      - action figure
+      - toy
+      - doll
+      - electronics
+      - phone
+      - computer
+      - camera
+      - video game
+      - clothing
+      - shoes
+      - jewelry
+      - watch
+      - collectible
+      - antique
+      - art
+      - painting
+      - print
+      - musical instrument
+      - automotive part
+      - home decor
+      - kitchen item
+      - furniture
+      - sports equipment
+      - fitness equipment
+      - tool
+      - craft supply
+      - beauty product
+      - health product
+      - pet supply
+      - general item
+
+      If you cannot determine the specific type, use "general item".
+      Respond with ONLY the product type, nothing else.
+    PROMPT
 
     messages = [
       {
@@ -193,44 +323,56 @@ class AiProductAnalysisJob < ApplicationJob
       parameters: {
         model: "gpt-4o-2024-11-20",
         messages: messages,
-        max_tokens: 50,
-        temperature: 0.1
+        max_tokens: 20,
+        temperature: 0.0  # Use 0.0 for more consistent type detection
       }
     )
 
-    product_type = response.dig("choices", 0, "message", "content")&.strip&.downcase || "general"
+    product_type = response.dig("choices", 0, "message", "content")&.strip&.downcase || "general item"
     Rails.logger.info "Determined product type: #{product_type}"
     product_type
   rescue => e
     Rails.logger.warn "Failed to determine product type: #{e.message}"
-    "general"
+    "general item"
   end
 
   # Get relevant category examples based on product type
   def get_relevant_category_examples(product_type)
     case product_type
-    when /comic|book|magazine/
+    when /comic book|comic|manga|graphic novel/
       get_books_comics_categories
-    when /clothing|apparel|fashion|dress|shirt|pants|shoes/
-      get_clothing_categories
-    when /electronic|phone|computer|camera|gadget/
-      get_electronics_categories
-    when /toy|action figure|doll|game/
+    when /book|magazine/
+      get_books_categories
+    when /trading card/
+      get_trading_card_categories
+    when /action figure|toy|doll/
       get_toys_categories
-    when /jewelry|watch|ring|necklace/
+    when /electronics|phone|computer|camera|video game/
+      get_electronics_categories
+    when /clothing|shoes/
+      get_clothing_categories
+    when /jewelry|watch/
       get_jewelry_categories
-    when /collectible|vintage|antique/
+    when /collectible|antique/
       get_collectibles_categories
-    when /art|painting|print|sculpture/
+    when /art|painting|print/
       get_art_categories
-    when /music|instrument|guitar|piano/
+    when /musical instrument/
       get_musical_categories
-    when /automotive|car|truck|motorcycle/
+    when /automotive/
       get_automotive_categories
-    when /home|kitchen|furniture|decor/
+    when /home decor|kitchen|furniture/
       get_home_garden_categories
-    when /sport|fitness|outdoor/
+    when /sports|fitness/
       get_sports_categories
+    when /tool/
+      get_tools_categories
+    when /craft/
+      get_crafts_categories
+    when /beauty|health/
+      get_health_beauty_categories
+    when /pet/
+      get_pet_categories
     else
       get_general_category_examples
     end
@@ -249,16 +391,38 @@ class AiProductAnalysisJob < ApplicationJob
     ].join("\n")
   end
 
-  def get_clothing_categories
+  def get_books_categories
     [
-      "Clothing, Shoes & Accessories > Women's Clothing > Dresses",
-      "Clothing, Shoes & Accessories > Women's Clothing > Tops & Blouses",
-      "Clothing, Shoes & Accessories > Men's Clothing > Casual Shirts",
-      "Clothing, Shoes & Accessories > Men's Clothing > T-Shirts",
-      "Clothing, Shoes & Accessories > Women's Shoes",
-      "Clothing, Shoes & Accessories > Men's Shoes",
-      "Clothing, Shoes & Accessories > Women's Accessories > Handbags & Purses",
-      "Clothing, Shoes & Accessories > Unisex Clothing, Shoes & Accs"
+      "Books > Fiction & Literature",
+      "Books > Textbooks, Education & Reference",
+      "Books > Children & Young Adults",
+      "Books > Antiquarian & Collectible"
+    ].join("\n")
+  end
+
+  def get_trading_card_categories
+    [
+      "Collectibles > Trading Cards > Sports Trading Cards > Baseball Cards",
+      "Collectibles > Trading Cards > Sports Trading Cards > Football Cards",
+      "Collectibles > Trading Cards > Sports Trading Cards > Basketball Cards",
+      "Collectibles > Trading Cards > Sports Trading Cards > Hockey Cards",
+      "Collectibles > Trading Cards > Sports Trading Cards > Soccer Cards",
+      "Collectibles > Trading Cards > Sports Trading Cards > Wrestling Cards",
+      "Collectibles > Trading Cards > Sports Trading Cards > Baseball & Softball Cards",
+      "Collectibles > Trading Cards > Sports Trading Cards > Basketball & Football Cards",
+      "Collectibles > Trading Cards > Sports Trading Cards > Hockey & Soccer Cards",
+      "Collectibles > Trading Cards > Sports Trading Cards > Wrestling & Baseball Cards"
+    ].join("\n")
+  end
+
+  def get_toys_categories
+    [
+      "Toys & Hobbies > Action Figures & Accessories > Action Figures",
+      "Toys & Hobbies > Building Toys > LEGO Building Toys",
+      "Toys & Hobbies > Dolls & Bears > Dolls",
+      "Toys & Hobbies > Games > Board & Traditional Games",
+      "Toys & Hobbies > Diecast & Toy Vehicles",
+      "Toys & Hobbies > Electronic, Battery & Wind-Up > Electronic Toys"
     ].join("\n")
   end
 
@@ -274,14 +438,16 @@ class AiProductAnalysisJob < ApplicationJob
     ].join("\n")
   end
 
-  def get_toys_categories
+  def get_clothing_categories
     [
-      "Toys & Hobbies > Action Figures & Accessories > Action Figures",
-      "Toys & Hobbies > Building Toys > LEGO Building Toys",
-      "Toys & Hobbies > Dolls & Bears > Dolls",
-      "Toys & Hobbies > Games > Board & Traditional Games",
-      "Toys & Hobbies > Diecast & Toy Vehicles",
-      "Toys & Hobbies > Electronic, Battery & Wind-Up > Electronic Toys"
+      "Clothing, Shoes & Accessories > Women's Clothing > Dresses",
+      "Clothing, Shoes & Accessories > Women's Clothing > Tops & Blouses",
+      "Clothing, Shoes & Accessories > Men's Clothing > Casual Shirts",
+      "Clothing, Shoes & Accessories > Men's Clothing > T-Shirts",
+      "Clothing, Shoes & Accessories > Women's Shoes",
+      "Clothing, Shoes & Accessories > Men's Shoes",
+      "Clothing, Shoes & Accessories > Women's Accessories > Handbags & Purses",
+      "Clothing, Shoes & Accessories > Unisex Clothing, Shoes & Accs"
     ].join("\n")
   end
 
@@ -353,6 +519,56 @@ class AiProductAnalysisJob < ApplicationJob
       "Sporting Goods > Fitness, Running & Yoga > Cardio Training",
       "Sporting Goods > Team Sports > Baseball & Softball",
       "Sporting Goods > Outdoor Sports > Cycling"
+    ].join("\n")
+  end
+
+  def get_tools_categories
+    [
+      "Home & Garden > Tools & Workshop Equipment > Hand Tools",
+      "Home & Garden > Tools & Workshop Equipment > Power Tools",
+      "Home & Garden > Tools & Workshop Equipment > Measuring Tools",
+      "Home & Garden > Tools & Workshop Equipment > Woodworking Tools",
+      "Home & Garden > Tools & Workshop Equipment > Automotive Tools"
+    ].join("\n")
+  end
+
+  def get_crafts_categories
+    [
+      "Home & Garden > Tools & Workshop Equipment > Woodworking Tools",
+      "Home & Garden > Tools & Workshop Equipment > Jewelry Making Tools",
+      "Home & Garden > Tools & Workshop Equipment > Sewing & Quilting Tools",
+      "Home & Garden > Tools & Workshop Equipment > Painting & Sculpting Tools",
+      "Home & Garden > Tools & Workshop Equipment > General Crafting Tools"
+    ].join("\n")
+  end
+
+  def get_health_beauty_categories
+    [
+      "Beauty & Personal Care > Skin Care > Face Care",
+      "Beauty & Personal Care > Skin Care > Body Care",
+      "Beauty & Personal Care > Hair Care > Hair Styling",
+      "Beauty & Personal Care > Hair Care > Hair Coloring",
+      "Beauty & Personal Care > Hair Care > Hair Care",
+      "Beauty & Personal Care > Makeup",
+      "Beauty & Personal Care > Skincare",
+      "Beauty & Personal Care > Bath & Body",
+      "Beauty & Personal Care > Fragrance",
+      "Beauty & Personal Care > Oral Care"
+    ].join("\n")
+  end
+
+  def get_pet_categories
+    [
+      "Pet Supplies > Dog Supplies",
+      "Pet Supplies > Cat Supplies",
+      "Pet Supplies > Fish Supplies",
+      "Pet Supplies > Bird Supplies",
+      "Pet Supplies > Small Animal Supplies",
+      "Pet Supplies > Reptile & Amphibian Supplies",
+      "Pet Supplies > Aquatic Supplies",
+      "Pet Supplies > Horse Supplies",
+      "Pet Supplies > Livestock Supplies",
+      "Pet Supplies > Other Pet Supplies"
     ].join("\n")
   end
 
@@ -465,14 +681,24 @@ class AiProductAnalysisJob < ApplicationJob
       "brand" => data["brand"],
       "category" => data["category"],
       "ebay_category" => data["ebay_category"],
-      "ebay_category_confidence" => data["ebay_category_confidence"] || 0.0,
+      "ebay_category_confidence" => data["confidence_notes"]&.dig("category_confidence") || data["ebay_category_confidence"] || 0.0,
       "item_specifics" => data["item_specifics"] || {},
-      "item_specifics_confidence" => data["item_specifics_confidence"] || 0.0,
+      "item_specifics_confidence" => data["confidence_notes"]&.dig("specifics_confidence") || data["item_specifics_confidence"] || 0.0,
       "missing_required_specifics" => data["missing_required_specifics"] || [],
       "requires_category_review" => data["requires_category_review"] || false,
       "requires_specifics_review" => data["requires_specifics_review"] || false,
-      "tags" => data["tags"] || []
+      "tags" => data["tags"] || [],
+      "confidence_notes" => data["confidence_notes"] || {}
     }
+
+    # Use AI confidence scores to determine if review is needed
+    if result["confidence_notes"]["category_confidence"].present? && result["confidence_notes"]["category_confidence"] < 0.7
+      result["requires_category_review"] = true
+    end
+
+    if result["confidence_notes"]["specifics_confidence"].present? && result["confidence_notes"]["specifics_confidence"] < 0.6
+      result["requires_specifics_review"] = true
+    end
 
     # Log the result for debugging
     Rails.logger.info "Analyzed image results: #{result.to_json}"
@@ -499,7 +725,20 @@ class AiProductAnalysisJob < ApplicationJob
 
     # Validate item specifics
     if data["item_specifics"].present? && data["item_specifics"].is_a?(Hash)
-      data["item_specifics"] = data["item_specifics"].select { |k, v| k.present? && v.present? }
+      cleaned_specifics = {}
+      data["item_specifics"].each do |key, value|
+        next if key.blank?
+
+        # Handle array values (like multiple characters)
+        if value.is_a?(Array)
+          # Join array values with commas for eBay compatibility
+          cleaned_value = value.compact.map(&:to_s).join(", ")
+          cleaned_specifics[key] = cleaned_value if cleaned_value.present?
+        elsif value.present?
+          cleaned_specifics[key] = value.to_s
+        end
+      end
+      data["item_specifics"] = cleaned_specifics
     else
       data["item_specifics"] = {}
     end
@@ -827,7 +1066,16 @@ class AiProductAnalysisJob < ApplicationJob
     return value unless aspect["values"].present?
 
     allowed_values = aspect["values"]
+    value_type = aspect["value_type"]
 
+    # For text_with_suggestions, the values are just suggestions, not strict requirements
+    # So we should keep the original value even if it's not in the list
+    if value_type == "text_with_suggestions"
+      Rails.logger.info "Aspect '#{aspect['name']}' is text_with_suggestions - keeping original value: #{value}"
+      return value
+    end
+
+    # For select fields, we need to find a match in the allowed values
     # Check for exact match
     exact_match = allowed_values.find { |v| v.downcase == value.downcase }
     return exact_match if exact_match
@@ -836,7 +1084,9 @@ class AiProductAnalysisJob < ApplicationJob
     partial_match = allowed_values.find { |v| v.downcase.include?(value.downcase) || value.downcase.include?(v.downcase) }
     return partial_match if partial_match
 
-    # If no match found, return original value (eBay may accept it anyway)
+    # If no match found and it's a strict select field, we might want to return nil or empty
+    # But for now, return original value (eBay may accept it anyway)
+    Rails.logger.warn "No match found for aspect '#{aspect['name']}' value '#{value}' in allowed values: #{allowed_values.first(5).join(', ')}#{allowed_values.size > 5 ? '...' : ''}"
     value
   end
 

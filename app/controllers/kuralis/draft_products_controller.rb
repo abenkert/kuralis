@@ -35,11 +35,7 @@ module Kuralis
       # Get all draft products for the current shop, ordered by creation date
       draft_products = current_shop.kuralis_products.draft.order(:created_at)
 
-      Rails.logger.info "DEBUG: Found #{draft_products.count} draft products for shop #{current_shop.id}"
-      Rails.logger.info "DEBUG: Draft product IDs: #{draft_products.pluck(:id)}"
-
       if draft_products.empty?
-        Rails.logger.info "DEBUG: No draft products found, redirecting with alert"
         redirect_to kuralis_ai_product_analyses_path(tab: "drafts"),
                     alert: "No draft products available for finalization."
         return
@@ -55,30 +51,20 @@ module Kuralis
         started_at: Time.current
       }
 
-      Rails.logger.info "DEBUG: Created session with #{draft_products.count} drafts, redirecting to sequential_edit"
-
       # Redirect to the first draft
       redirect_to sequential_edit_kuralis_draft_products_path
     end
 
     # GET /kuralis/draft_products/sequential_edit
     def sequential_edit
-      Rails.logger.info "DEBUG: sequential_edit called"
-      Rails.logger.info "DEBUG: @sequential_session present: #{@sequential_session.present?}"
-      Rails.logger.info "DEBUG: session[:sequential_finalization]: #{session[:sequential_finalization]}"
-
       unless @sequential_session
-        Rails.logger.info "DEBUG: No sequential session found, redirecting"
         redirect_to kuralis_ai_product_analyses_path(tab: "drafts"),
                     alert: "Sequential finalization session not found."
         return
       end
 
       @current_draft = get_current_draft
-      Rails.logger.info "DEBUG: Current draft: #{@current_draft&.id}"
-
       unless @current_draft
-        Rails.logger.info "DEBUG: No current draft found, completing session"
         # No more drafts to process
         complete_sequential_session
         return
@@ -93,8 +79,6 @@ module Kuralis
 
       # Get confidence information
       @analysis = @current_draft.ai_product_analysis
-
-      Rails.logger.info "DEBUG: Rendering sequential_edit view"
 
       render :sequential_edit
     end
@@ -218,17 +202,12 @@ module Kuralis
       current_index = @sequential_session["current_index"]
       draft_ids = @sequential_session["draft_ids"]
 
-      Rails.logger.info "DEBUG: get_current_draft - current_index: #{current_index}, draft_ids: #{draft_ids}"
-
-      # Add safety checks
       return nil unless current_index && draft_ids
       return nil if current_index >= draft_ids.length
 
       current_id = draft_ids[current_index]
-      Rails.logger.info "DEBUG: Looking for draft product with ID: #{current_id}"
 
       draft = current_shop.kuralis_products.draft.find_by(id: current_id)
-      Rails.logger.info "DEBUG: Found draft: #{draft&.id} - #{draft&.title}"
 
       draft
     end
