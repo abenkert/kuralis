@@ -1,5 +1,5 @@
 <div class="col-md-6 mb-4" id="analysis_<%= analysis.id %>">
-  <div class="analysis-item position-relative">
+  <div class="analysis-item position-relative status-<%= analysis.status %>">
     <% if analysis.image_attachment.attached? %>
       <% begin %>
         <%= image_tag analysis.image_attachment.variant(resize_to_limit: [300, 200]), 

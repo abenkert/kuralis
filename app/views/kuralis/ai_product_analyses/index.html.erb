@@ -21,10 +21,15 @@
         <div>
           <strong>AI Analysis in Progress</strong><br>
           <small>
-            <%= @processing_analyses.count %> images currently being analyzed, 
-            <%= @pending_analyses.count %> in queue. 
+            <span id="processing-count"><%= @processing_analyses.count %></span> images currently being analyzed, 
+            <span id="pending-count"><%= @pending_analyses.count %></span> in queue. 
             <span class="text-muted">This page updates automatically.</span>
           </small>
+        </div>
+        <div class="ms-auto">
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="window.location.reload()">
+            <i class="fas fa-sync-alt me-1"></i>Refresh Now
+          </button>
         </div>
       </div>
     </div>
@@ -483,6 +488,9 @@
         if (draftsTab) draftsTab.click();
       }
     }
+
+    // Initialize real-time progress tracking
+    initializeProgressTracking();
   });
 
   document.addEventListener('turbo:load', function() {
@@ -506,6 +514,147 @@
       if (processingCount === 0 && draftsCount > 0) {
         const draftsTab = document.getElementById('drafts-tab');
         if (draftsTab) draftsTab.click();
+      }
+    }
+
+    // Re-initialize progress tracking on turbo load
+    initializeProgressTracking();
+  });
+
+  // Real-time progress tracking and updates
+  function initializeProgressTracking() {
+    // Track initial counts
+    let initialProcessingCount = <%= (@pending_analyses.count + @processing_analyses.count) %>;
+    let completedCount = 0;
+    let hasShownCompletionMessage = false;
+
+    // Update progress banner counts when Turbo Streams update individual items
+    function updateProgressCounts() {
+      const processingItems = document.querySelectorAll('#ai_analyses .analysis-item .status-processing, #ai_analyses .analysis-item .status-pending');
+      const completedItems = document.querySelectorAll('#ai_analyses .analysis-item .status-completed');
+      
+      const currentProcessingCount = processingItems.length;
+      const currentCompletedCount = completedItems.length;
+      
+      // Update the banner counts
+      const processingCountEl = document.getElementById('processing-count');
+      const pendingCountEl = document.getElementById('pending-count');
+      
+      if (processingCountEl) {
+        processingCountEl.textContent = currentProcessingCount;
+      }
+      
+      // Hide banner if no more processing
+      const banner = document.getElementById('processing-banner');
+      if (banner && currentProcessingCount === 0) {
+        banner.style.display = 'none';
+        
+        // Show completion message if we had items processing
+        if (initialProcessingCount > 0 && !hasShownCompletionMessage) {
+          showCompletionNotification(currentCompletedCount);
+          hasShownCompletionMessage = true;
+          
+          // Auto-switch to drafts tab after a short delay
+          setTimeout(() => {
+            const draftsTab = document.getElementById('drafts-tab');
+            if (draftsTab && currentCompletedCount > 0) {
+              draftsTab.click();
+              
+              // Update URL to reflect the tab change
+              const url = new URL(window.location);
+              url.searchParams.set('tab', 'drafts');
+              window.history.replaceState({}, '', url);
+            }
+          }, 2000);
+        }
+      }
+    }
+
+    // Set up a MutationObserver to watch for changes in the analyses container
+    const analysesContainer = document.getElementById('ai_analyses');
+    if (analysesContainer) {
+      const observer = new MutationObserver(function(mutations) {
+        let shouldUpdate = false;
+        mutations.forEach(function(mutation) {
+          if (mutation.type === 'childList' || 
+              (mutation.type === 'attributes' && mutation.attributeName === 'class')) {
+            shouldUpdate = true;
+          }
+        });
+        
+        if (shouldUpdate) {
+          // Small delay to ensure DOM is fully updated
+          setTimeout(updateProgressCounts, 100);
+        }
+      });
+      
+      observer.observe(analysesContainer, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class']
+      });
+    }
+
+    // Also check periodically in case Turbo Streams don't fire the observer
+    if (initialProcessingCount > 0) {
+      const progressInterval = setInterval(() => {
+        updateProgressCounts();
+        
+        // Stop checking if no more processing items
+        const currentProcessingCount = document.querySelectorAll('#ai_analyses .analysis-item .status-processing, #ai_analyses .analysis-item .status-pending').length;
+        if (currentProcessingCount === 0) {
+          clearInterval(progressInterval);
+        }
+      }, 3000); // Check every 3 seconds
+    }
+  }
+
+  // Show a nice completion notification
+  function showCompletionNotification(completedCount) {
+    const notification = document.createElement('div');
+    notification.className = 'alert alert-success alert-dismissible fade show mb-4';
+    notification.innerHTML = `
+      <div class="d-flex align-items-center">
+        <i class="fas fa-check-circle text-success me-3 fa-lg"></i>
+        <div>
+          <strong>Analysis Complete!</strong><br>
+          <small>${completedCount} ${completedCount === 1 ? 'image has' : 'images have'} been analyzed and ${completedCount === 1 ? 'a draft product has' : 'draft products have'} been created automatically.</small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    `;
+    
+    // Insert at the top of the page
+    const container = document.querySelector('.container-fluid');
+    if (container) {
+      container.insertBefore(notification, container.firstChild);
+      
+      // Auto-dismiss after 10 seconds
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.remove();
+        }
+      }, 10000);
+    }
+  }
+
+  // Enhanced Turbo Stream handling for better real-time updates
+  document.addEventListener('turbo:before-stream-render', function(event) {
+    console.log('Turbo Stream received:', event.detail);
+  });
+
+  // Handle page visibility changes to refresh when user returns
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+      // User returned to the page, check if we need to refresh
+      const processingItems = document.querySelectorAll('#ai_analyses .analysis-item .status-processing, #ai_analyses .analysis-item .status-pending');
+      if (processingItems.length > 0) {
+        // Still have processing items, but user might have missed updates
+        // Refresh after a short delay to get latest status
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
       }
     }
   });

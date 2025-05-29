@@ -398,11 +398,14 @@ export default class extends Controller {
           const result = await response.json()
           console.log('Upload successful:', result)
           
-          this.updateProgress(this.selectedFiles.length, this.selectedFiles.length, 'Upload complete! Processing...')
+          this.updateProgress(this.selectedFiles.length, this.selectedFiles.length, 'Upload complete! Starting AI analysis...')
+          
+          // Show a success message before redirecting
+          this.showSuccessMessage(result)
           
           setTimeout(() => {
             window.location.href = result.redirect_url || '/kuralis/ai_product_analyses?tab=processing'
-          }, 1000)
+          }, 2000) // Longer delay to show success message
         } else {
           const htmlContent = await response.text()
           console.error('Expected JSON but got HTML:', htmlContent.substring(0, 200))
@@ -616,5 +619,18 @@ export default class extends Controller {
         )
       }
     }
+  }
+
+  // Show success message
+  showSuccessMessage(result) {
+    const successMessage = document.createElement('div')
+    successMessage.className = 'alert alert-success mt-3'
+    successMessage.innerHTML = `
+      <strong>Upload Successful!</strong>
+      <p>${result.message || 'Your images have been successfully uploaded and are being processed.'}</p>
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `
+    
+    this.formTarget.appendChild(successMessage)
   }
 } 

@@ -74,6 +74,9 @@ class AiProductAnalysisJob < ApplicationJob
       partial: "kuralis/ai_product_analyses/ai_analysis_item",
       locals: { analysis: analysis }
     )
+
+    # Also broadcast progress banner update
+    broadcast_progress_update(shop)
   rescue => e
     Rails.logger.warn "Failed to broadcast analysis update: #{e.message}"
     # Don't fail the job if broadcasting fails
@@ -86,13 +89,66 @@ class AiProductAnalysisJob < ApplicationJob
     if draft_product
       Rails.logger.info "Auto-created draft product #{draft_product.id} from analysis #{analysis.id}"
 
-      # Note: Removed Turbo Stream broadcast since the partial doesn't exist
-      # The draft product is created successfully and will appear on page refresh
-      # or when the user navigates to the drafts tab
+      # Broadcast that a draft product was created
+      broadcast_draft_product_created(analysis.shop, draft_product)
     end
   rescue => e
     Rails.logger.error "Failed to create draft product from analysis #{analysis.id}: #{e.message}"
     # Don't fail the job if draft creation fails
+  end
+
+  def broadcast_progress_update(shop)
+    # Get current counts
+    pending_count = shop.ai_product_analyses.pending.count
+    processing_count = shop.ai_product_analyses.processing.count
+    total_processing = pending_count + processing_count
+
+    # Broadcast progress update
+    Turbo::StreamsChannel.broadcast_update_to(
+      "shop_#{shop.id}_analyses",
+      target: "processing-count",
+      html: processing_count.to_s
+    )
+
+    Turbo::StreamsChannel.broadcast_update_to(
+      "shop_#{shop.id}_analyses",
+      target: "pending-count",
+      html: pending_count.to_s
+    )
+
+    # Update the sidebar indicator
+    if total_processing > 0
+      Turbo::StreamsChannel.broadcast_update_to(
+        "shop_#{shop.id}_analyses",
+        target: "ai-progress-indicator",
+        html: total_processing.to_s
+      )
+    else
+      # Remove the indicator when no more processing
+      Turbo::StreamsChannel.broadcast_remove_to(
+        "shop_#{shop.id}_analyses",
+        target: "ai-progress-indicator"
+      )
+    end
+
+    # If no more processing, hide the banner
+    if total_processing == 0
+      Turbo::StreamsChannel.broadcast_update_to(
+        "shop_#{shop.id}_analyses",
+        target: "processing-banner",
+        html: ""
+      )
+    end
+  rescue => e
+    Rails.logger.warn "Failed to broadcast progress update: #{e.message}"
+  end
+
+  def broadcast_draft_product_created(shop, draft_product)
+    # This could be used to update the drafts tab in real-time
+    # For now, we'll let the JavaScript handle the tab switching
+    Rails.logger.info "Draft product #{draft_product.id} created and ready for finalization"
+  rescue => e
+    Rails.logger.warn "Failed to broadcast draft product creation: #{e.message}"
   end
 
   def perform_ai_analysis(analysis)

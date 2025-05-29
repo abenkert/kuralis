@@ -17,6 +17,8 @@
   </head>
 
   <body>
+    <%= turbo_stream_from "shop_#{current_shop.id}_analyses" if defined?(current_shop) %>
+    
     <div class="container-fluid">
       <div class="row">
         <!-- Sidebar -->
@@ -45,6 +47,11 @@
               <li class="nav-item">
                 <%= link_to kuralis_ai_product_analyses_path, class: "nav-link #{current_page?(kuralis_ai_product_analyses_path) ? 'active' : ''}" do %>
                   <i class="bi bi-magic"></i> AI Creation
+                  <% if defined?(current_shop) && current_shop.ai_product_analyses.where(status: ['pending', 'processing']).exists? %>
+                    <span class="badge bg-primary ms-2" id="ai-progress-indicator">
+                      <%= current_shop.ai_product_analyses.where(status: ['pending', 'processing']).count %>
+                    </span>
+                  <% end %>
                 <% end %>
               </li>
               
