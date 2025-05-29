@@ -24,12 +24,13 @@ class KuralisProduct < ApplicationRecord
   validates :description, presence: true, unless: :is_draft?
   validates :base_price, numericality: { greater_than: 0 }, presence: true, unless: :is_draft?
   validates :base_quantity, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, presence: true
+  validates :weight_oz, numericality: { greater_than: 0 }, presence: true, unless: :is_draft?
   validates :status, presence: true
 
   # Relaxed validations for draft products
   validates :title, presence: { message: "can't be blank for draft products" }, if: :is_draft?
   validates :base_price, numericality: { greater_than: 0, allow_blank: true }, if: :is_draft?
-  # validates :weight_oz, numericality: { greater_than: 0 }, presence: true
+  validates :weight_oz, numericality: { greater_than: 0, allow_blank: true }, if: :is_draft?
 
   # Custom validation to ensure finalized products are complete
   validate :ensure_complete_for_finalization, if: -> { !is_draft? && will_save_change_to_is_draft? }
@@ -192,6 +193,7 @@ class KuralisProduct < ApplicationRecord
     missing << "price" if base_price.blank?
     missing << "description" if description.blank? || description == "Product description to be added"
     missing << "title" if title.blank? || title == "Untitled Product"
+    missing << "weight" if weight_oz.blank?
 
     missing
   end
@@ -367,5 +369,6 @@ class KuralisProduct < ApplicationRecord
     errors.add(:base_price, "must be present when finalizing product") if base_price.blank?
     errors.add(:description, "must be present when finalizing product") if description.blank?
     errors.add(:title, "must be present when finalizing product") if title.blank?
+    errors.add(:weight_oz, "must be present when finalizing product") if weight_oz.blank?
   end
 end

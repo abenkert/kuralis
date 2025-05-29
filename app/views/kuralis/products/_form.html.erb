@@ -143,7 +143,7 @@
                                   step: 0.01, 
                                   min: 0,
                                   class: "form-control #{'is-invalid' if product.errors[:weight_oz].any?}",
-                                  required: true %>
+                                  required: !product.draft? %>
             <% if product.errors[:weight_oz].any? %>
               <div class="invalid-feedback"><%= product.errors[:weight_oz].first %></div>
             <% else %>
@@ -210,10 +210,18 @@
                   <input type="hidden" name="<%= form.object_name %>[tags][]" value="<%= tag %>">
                 <% end %>
               <% end %>
-              <input type="text" 
-                     id="tags-input" 
-                     placeholder="Add tags (press Enter to add)"
-                     class="form-control">
+              <div class="input-group">
+                <input type="text" 
+                       id="tags-input" 
+                       placeholder="Add a tag"
+                       class="form-control">
+                <button type="button" 
+                        id="add-tag-btn" 
+                        class="btn btn-outline-primary"
+                        onclick="addTagFromInput()">
+                  <i class="fas fa-plus"></i> Add
+                </button>
+              </div>
             </div>
             <div id="tags-container" class="d-flex flex-wrap gap-1">
               <% if product.tags.present? %>
@@ -226,7 +234,7 @@
                 <% end %>
               <% end %>
             </div>
-            <small class="form-text text-muted">Tags help categorize your products (e.g., "electronics, vintage, sale")</small>
+            <small class="form-text text-muted">Tags help categorize your products (e.g., "electronics, vintage, sale"). Press Enter or click Add to add a tag.</small>
           </div>
         </div>
       </div>
@@ -441,26 +449,20 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   const form = document.querySelector('.needs-validation');
-  const dropzone = document.getElementById('dropzone');
-  const fileInput = document.getElementById('product_images');
+  const dropzone = document.querySelector('.dropzone-area');
+  const fileInput = document.querySelector('input[type="file"][multiple]');
   const previewContainer = document.getElementById('imagePreviewContainer');
   const ebayTab = document.getElementById('ebay-info');
   const tagsInput = document.getElementById('tags-input');
   const tagsContainer = document.getElementById('tags-container');
-  
-  // Store selected files for image upload
-  let selectedFiles = [];
   
   // Tags functionality
   if (tagsInput) {
     tagsInput.addEventListener('keypress', function(e) {
       if (e.key === 'Enter') {
         e.preventDefault();
-        const tag = this.value.trim();
-        if (tag && !isTagExists(tag)) {
-          addTag(tag);
-          this.value = '';
-        }
+        e.stopPropagation();
+        addTagFromInput();
       }
     });
   }
@@ -487,8 +489,8 @@ document.addEventListener('DOMContentLoaded', function() {
       let isValid = true;
       
       // Check if there are any images already attached or being uploaded
-      const hasExistingImages = document.querySelectorAll('.existing-image-preview:not([style*="display: none"])').length > 0;
-      const hasNewImages = fileInput && fileInput.files.length > 0;
+      const hasExistingImages = document.querySelectorAll('.image-preview-item:not([style*="display: none"])').length > 0;
+      const hasNewImages = fileInput && fileInput.files && fileInput.files.length > 0;
       
       if (!hasExistingImages && !hasNewImages) {
         isValid = false;
@@ -511,10 +513,18 @@ document.addEventListener('DOMContentLoaded', function() {
       
       // Get all fields marked with required attribute
       const requiredFields = form.querySelectorAll('[required]');
+      const invalidFields = [];
+      
       requiredFields.forEach(field => {
-        if (!field.value.trim()) {
+        // Only validate if the field is actually empty (trim whitespace)
+        const fieldValue = field.value ? field.value.trim() : '';
+        if (!fieldValue) {
           isValid = false;
           field.classList.add('is-invalid');
+          
+          // Track which field is invalid for debugging
+          const fieldLabel = field.closest('.form-group')?.querySelector('label')?.textContent?.trim() || field.name || field.id;
+          invalidFields.push(fieldLabel);
           
           // Ensure parent tab is visible if validation fails
           const tabPane = field.closest('.tab-pane');
@@ -580,6 +590,9 @@ document.addEventListener('DOMContentLoaded', function() {
           const ebayTabErrors = ebayTab ? ebayTab.querySelectorAll('.is-invalid').length > 0 : false;
           
           let alertText = 'Please fill in all required fields marked with *';
+          if (invalidFields.length > 0) {
+            alertText += ': ' + invalidFields.join(', ');
+          }
           if (ebayTabErrors && listOnEbayNow) {
             alertText += '. Some required fields on the eBay Listing tab need attention for eBay listing.';
           }
@@ -592,6 +605,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const firstInvalid = form.querySelector('.is-invalid');
         if (firstInvalid) {
           firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          firstInvalid.focus(); // Also focus the field to help user see what's wrong
         }
       } else {
         // Remove the alert if form is valid
@@ -605,35 +619,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Image upload functionality
   if (dropzone && fileInput && previewContainer) {
-    // Prevent default drag behaviors
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-      dropzone.addEventListener(eventName, preventDefaults, false);
-      document.body.addEventListener(eventName, preventDefaults, false);
-    });
-    
-    // Highlight drop area when item is dragged over it
-    ['dragenter', 'dragover'].forEach(eventName => {
-      dropzone.addEventListener(eventName, highlight, false);
-    });
-    
-    ['dragleave', 'drop'].forEach(eventName => {
-      dropzone.addEventListener(eventName, unhighlight, false);
-    });
-    
-    // Handle dropped files
-    dropzone.addEventListener('drop', handleDrop, false);
-    
-    // Handle file input change
-    fileInput.addEventListener('change', function(e) {
-      const files = Array.from(e.target.files);
-      handleFileSelection(files);
-    }, false);
+    // The new image upload component uses Stimulus controllers
+    // So we don't need to handle drag/drop and file selection here
+    // Just handle the remove buttons for existing images that might not be handled by Stimulus
     
     // Handle remove buttons for existing images
-    const removeButtons = document.querySelectorAll('.image-preview-remove');
+    const removeButtons = document.querySelectorAll('.btn-close[aria-label="Remove image"]');
     removeButtons.forEach(button => {
       button.addEventListener('click', function() {
-        const imageId = this.getAttribute('data-id');
+        const imageItem = this.closest('.image-preview-item');
+        const imageId = imageItem?.getAttribute('data-image-id');
+        
         if (imageId) {
           // Add hidden field to mark this image for deletion
           const hiddenField = document.createElement('input');
@@ -644,105 +640,51 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Hide the image preview
-        const previewItem = this.closest('.image-preview-item');
-        if (previewItem) {
-          previewItem.style.display = 'none';
+        if (imageItem) {
+          imageItem.style.display = 'none';
         }
       });
     });
-    
-    function preventDefaults(e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    
-    function highlight() {
-      dropzone.classList.add('dropzone-active');
-    }
-    
-    function unhighlight() {
-      dropzone.classList.remove('dropzone-active');
-    }
-    
-    function handleDrop(e) {
-      const dt = e.dataTransfer;
-      const files = Array.from(dt.files);
-      handleFileSelection(files);
-    }
-    
-    function handleFileSelection(files) {
-      // Add new files to our collection
-      selectedFiles = [...selectedFiles, ...files];
-      
-      // Clear preview container to rebuild it
-      previewContainer.innerHTML = '';
-      
-      // Preview all selected files
-      selectedFiles.forEach((file, index) => {
-        previewFile(file, index);
-      });
-      
-      // Update the form with our files using a DataTransfer object
-      updateFormFiles();
-    }
-    
-    function updateFormFiles() {
-      // Create a new DataTransfer object
-      const dataTransfer = new DataTransfer();
-      
-      // Add all selected files to it
-      selectedFiles.forEach(file => {
-        dataTransfer.items.add(file);
-      });
-      
-      // Set the file input's files to our DataTransfer files
-      fileInput.files = dataTransfer.files;
-    }
-    
-    function previewFile(file, index) {
-      if (!file.type.match('image.*')) return;
-      
-      const reader = new FileReader();
-      
-      reader.onload = function(e) {
-        const preview = document.createElement('div');
-        preview.className = 'image-preview-item';
-        preview.dataset.index = index;
-        
-        const img = document.createElement('img');
-        img.src = e.target.result;
-        img.className = 'img-fluid';
-        
-        const removeBtn = document.createElement('div');
-        removeBtn.className = 'image-preview-remove';
-        removeBtn.innerHTML = '<i class="fas fa-times"></i>';
-        removeBtn.addEventListener('click', function() {
-          // Remove this file from our collection
-          selectedFiles = selectedFiles.filter((_, i) => i !== index);
-          
-          // Rebuild preview
-          previewContainer.innerHTML = '';
-          selectedFiles.forEach((file, idx) => {
-            previewFile(file, idx);
-          });
-          
-          // Update form files
-          updateFormFiles();
-        });
-        
-        preview.appendChild(img);
-        preview.appendChild(removeBtn);
-        previewContainer.appendChild(preview);
-      }
-      
-      reader.readAsDataURL(file);
-    }
   }
 });
 
 function removeTag(button, tag) {
   const tagElement = button.closest('span');
   tagElement.remove();
+}
+
+// Global function to add tag from input (called by both Enter key and plus button)
+function addTagFromInput() {
+  const tagsInput = document.getElementById('tags-input');
+  const tagsContainer = document.getElementById('tags-container');
+  
+  if (!tagsInput || !tagsContainer) return;
+  
+  const tag = tagsInput.value.trim();
+  if (tag && !isTagExists(tag)) {
+    addTag(tag);
+    tagsInput.value = '';
+  }
+}
+
+// Helper functions for tags (make them global)
+function addTag(tag) {
+  const tagsContainer = document.getElementById('tags-container');
+  if (!tagsContainer) return;
+  
+  const tagElement = document.createElement('span');
+  tagElement.className = 'badge bg-primary d-flex align-items-center';
+  tagElement.innerHTML = `
+    ${tag}
+    <button type="button" class="btn-close btn-close-white ms-1" style="font-size: 0.6em;" onclick="removeTag(this, '${tag}')"></button>
+    <input type="hidden" name="kuralis_product[tags][]" value="${tag}">
+  `;
+  tagsContainer.appendChild(tagElement);
+}
+
+function isTagExists(tag) {
+  const existingTags = Array.from(document.querySelectorAll('input[name="kuralis_product[tags][]"]'));
+  return existingTags.some(input => input.value === tag);
 }
 </script>
 
