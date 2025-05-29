@@ -1,5 +1,6 @@
 class AiProductAnalysisJob < ApplicationJob
   require "base64"
+  require "image_processing/mini_magick"
 
   queue_as :default
 
@@ -23,14 +24,14 @@ class AiProductAnalysisJob < ApplicationJob
     begin
       # Get the attached image
       if analysis.image_attachment.attached?
-        # Download the image data
-        image_data = analysis.image_attachment.download
+        # Process and compress image for faster analysis
+        processed_image_data = process_image_for_analysis(analysis.image_attachment)
 
         # Get the filename
         filename = analysis.image_attachment.filename.to_s
 
-        # Analyze the image
-        results = analyze_image(image_data, filename, shop_id)
+        # Analyze the image with optimized settings
+        results = analyze_image(processed_image_data, filename, shop_id)
 
         # Mark as completed with results and automatically create draft product
         if results.key?(:error)
@@ -63,13 +64,55 @@ class AiProductAnalysisJob < ApplicationJob
     end
   end
 
+  private
+
+  # Broadcast real-time updates to the UI
+  def broadcast_update(analysis)
+    # Broadcast to the specific analysis item
+    Turbo::StreamsChannel.broadcast_replace_to(
+      "shop_#{analysis.shop_id}_analyses",
+      target: "analysis_#{analysis.id}",
+      partial: "kuralis/ai_product_analyses/ai_analysis_item",
+      locals: { analysis: analysis }
+    )
+
+    # Also broadcast a general update to refresh counters
+    Turbo::StreamsChannel.broadcast_update_to(
+      "shop_#{analysis.shop_id}_analyses",
+      target: "analysis_counters",
+      html: ""  # This will trigger a page refresh of counters
+    )
+  rescue => e
+    Rails.logger.warn "Failed to broadcast update: #{e.message}"
+  end
+
+  # Process and compress image for faster AI analysis
+  def process_image_for_analysis(image_attachment)
+    # Download the original image
+    original_data = image_attachment.download
+
+    # Process with ImageProcessing to optimize for AI analysis
+    # Resize to max 1024px on longest side and compress to reduce API payload
+    processed_blob = ImageProcessing::MiniMagick
+      .source(StringIO.new(original_data))
+      .resize_to_limit(1024, 1024)  # Smaller size for faster processing
+      .convert("jpeg")              # Convert to JPEG for better compression
+      .call(quality: 85)            # Good quality but smaller file size
+
+    processed_blob.read
+  rescue => e
+    Rails.logger.warn "Failed to process image, using original: #{e.message}"
+    # Fall back to original if processing fails
+    original_data
+  end
+
   def analyze_image(image_data, filename, shop_id)
     # Call OpenAI API to analyze the image using the OpenAI Vision API
     begin
       # Encode image for API request
       base64_image = Base64.strict_encode64(image_data)
 
-      # Call OpenAI Vision API
+      # Call OpenAI Vision API with optimized settings
       response = call_openai_api(base64_image, shop_id)
 
       # Process OpenAI response
@@ -86,10 +129,10 @@ class AiProductAnalysisJob < ApplicationJob
     openai_service = Ai::OpenaiService.new(
       model: "gpt-4o-2024-11-20",
       temperature: 0.2,
-      max_tokens: 10000
+      max_tokens: 8000  # Reduced for faster response
     )
 
-    # First, do a quick analysis to determine product type
+    # First, do a quick analysis to determine product type (using low detail)
     product_type = determine_product_type(base64_image, openai_service)
 
     # Get relevant category examples based on product type
@@ -100,120 +143,34 @@ class AiProductAnalysisJob < ApplicationJob
 
     # Enhanced prompt with relevant eBay category examples
     prompt = <<~PROMPT
-      You are an expert product analyst specializing in accurate identification and categorization for eBay listings. Analyze this product image with extreme attention to detail and accuracy.
+      Analyze this product image and extract detailed information. Based on the image, this appears to be a #{product_type}.
 
-      Return a JSON object with the following fields:
-
-      **CORE FIELDS:**
-      - title: Accurate, specific product title following category conventions
-      - description: Detailed description focusing on visible features and condition
-      - brand: Brand/manufacturer name (only if clearly visible or identifiable)
-      - ebay_category_path: EXACT category path from examples below
-      - item_specifics: Key-value pairs of product attributes (see category-specific guidance)
-      - tags: Array of relevant search terms
-      - confidence_notes: Object with confidence levels for each field (0.0-1.0)
-
-      **ACCURACY GUIDELINES:**
-      1. ONLY state what you can clearly see or read in the image
-      2. Use "Unknown" or null for uncertain information - DO NOT GUESS
-      3. For text/numbers: Only include if clearly legible
-      4. Do NOT assess condition unless professionally graded or clearly marked - let users determine condition
-      5. Include confidence scores in confidence_notes for key identifications
-
-      **CATEGORY-SPECIFIC EXTRACTION RULES:**
-
-      **For Comics/Books:**
-      - Title format: "[Series Name] #[Issue] ([Year])" if visible
-      - Look for: Issue numbers, series names, publisher logos, publication dates
-      - Item specifics: Series Title, Issue Number, Publication Year, Publisher, Character(s)
-      - IMPORTANT: For Grade/Condition - ONLY provide if you can clearly see professional grading labels (CGC, CBCS, PGX slabs). Do NOT assess condition for raw/ungraded items - let the user determine condition
-      - Check spine, cover, and any visible text carefully
-
-      **For Electronics:**
-      - Title format: "[Brand] [Model] [Key Features]"
-      - Look for: Model numbers, brand logos, capacity/specs, condition indicators
-      - Item specifics: Brand, Model, Storage Capacity, Color, Connectivity
-      - Do NOT assess condition unless clearly marked (e.g., "Refurbished", "Open Box")
-
-      **For Clothing:**
-      - Title format: "[Brand] [Item Type] [Size] [Color/Pattern]"
-      - Look for: Size tags, brand labels, material tags, style details
-      - Item specifics: Brand, Size, Color, Material, Style
-      - Do NOT assess condition - let user determine wear level
-
-      **For Collectibles:**
-      - Title format: "[Brand/Series] [Character/Item] [Year/Edition]"#{' '}
-      - Look for: Series markings, character names, copyright dates, manufacturer marks
-      - Item specifics: Character, Series, Manufacturer, Year, Scale
-      - Only include condition if professionally graded or clearly marked
-
-      **EBAY CATEGORY SELECTION:**
-      Choose the MOST SPECIFIC category from these examples that matches the product:
+      Here are some relevant eBay category examples for this type of product:
       #{category_examples}
 
-      **ITEM SPECIFICS PRIORITY:**
-      Focus on attributes that are:
-      1. Clearly visible in the image
-      2. Commonly required for the chosen eBay category#{'  '}
-      3. Important for buyer decision-making
-      4. Accurately determinable from visual inspection
-
-      **CONDITION ASSESSMENT:**
-      Do NOT assess condition for most items - let users determine condition themselves.
-
-      ONLY include condition/grade information if:
-      - Professional grading labels are clearly visible (CGC, CBCS, PGX for comics)
-      - Items are clearly marked as "Refurbished", "Open Box", "New in Package", etc.
-      - Factory sealed items where packaging condition is obvious
-
-      **SPECIAL NOTE FOR COMICS:**
-      - ONLY provide numerical grades (9.8, 9.0, etc.) if you can see professional grading company labels (CGC, CBCS, PGX)
-      - Do NOT assess condition for raw (ungraded) comics - users will determine condition themselves
-      - Never guess or estimate professional grades for raw comics
-
-      **CONFIDENCE SCORING:**
-      In confidence_notes, provide 0.0-1.0 scores for:
-      - title_confidence: How certain you are about the title accuracy
-      - brand_confidence: Confidence in brand identification
-      - category_confidence: Certainty of category selection
-      - specifics_confidence: Overall confidence in item specifics
-
-      **IMPORTANT REMINDERS:**
-      - Do NOT suggest prices - pricing is handled separately
-      - Use null for any field you cannot determine with reasonable confidence
-      - Prioritize accuracy over completeness
-      - When in doubt, choose broader categories rather than guessing specific ones
-      - Include uncertainty indicators in descriptions when appropriate
-
-      **EXAMPLE RESPONSE FORMAT:**
-      ```json
+      Please provide a JSON response with the following structure:
       {
-        "title": "Amazing Spider-Man #1 (1963) Marvel Comics",
-        "description": "Vintage Marvel comic book featuring the first appearance of Spider-Man. Published by Marvel Comics in 1963. This is a raw (ungraded) comic.",
-        "brand": "Marvel",
-        "ebay_category_path": "Collectibles > Comic Books & Memorabilia > Comics > Comics & Graphic Novels",
+        "title": "Specific product title with key details",
+        "description": "Detailed description including condition, features, and relevant details",
+        "brand": "Brand or publisher name",
+        "condition": "Product condition (new, like_new, very_good, good, acceptable)",
+        "category": "General product category",
+        "ebay_category": "Most specific eBay category path from the examples above",
         "item_specifics": {
-          "Series Title": "Amazing Spider-Man",
-          "Issue Number": "1",
-          "Publication Year": "1963",
-          "Publisher": "Marvel",
-          "Character": "Spider-Man"
+          "key": "value pairs of important product attributes"
         },
-        "tags": ["spider-man", "marvel", "vintage", "comic", "1963", "key issue"],
+        "tags": ["relevant", "search", "tags"],
         "confidence_notes": {
-          "title_confidence": 0.9,
-          "brand_confidence": 0.95,
-          "category_confidence": 1.0,
-          "specifics_confidence": 0.85
+          "category_confidence": 0.85,
+          "specifics_confidence": 0.75,
+          "overall_confidence": 0.80
         }
       }
-      ```
 
-      Analyze the image now and provide accurate, detailed information following these guidelines.
+      Focus on accuracy and be specific. If you cannot determine certain details, use reasonable defaults or leave fields empty.
+      Return ONLY the JSON response, no additional text.
     PROMPT
 
-    # Since the OpenAI service doesn't have a specific vision method,
-    # we'll use chat_with_history and construct the messages with the image
     messages = [
       {
         role: "system",
@@ -227,7 +184,7 @@ class AiProductAnalysisJob < ApplicationJob
             type: "image_url",
             image_url: {
               url: "data:image/jpeg;base64,#{base64_image}",
-              detail: "high"
+              detail: "low"  # Changed from "high" to "low" for much faster processing
             }
           }
         ]
@@ -241,7 +198,7 @@ class AiProductAnalysisJob < ApplicationJob
       parameters: {
         model: "gpt-4o-2024-11-20",
         messages: messages,
-        max_tokens: 10000,
+        max_tokens: 8000,  # Reduced for faster response
         temperature: 0.2
       }
     )
@@ -867,22 +824,6 @@ class AiProductAnalysisJob < ApplicationJob
     Rails.logger.error "Error creating draft product from analysis #{analysis.id}: #{e.message}"
     Rails.logger.error e.backtrace.join("\n")
     nil
-  end
-
-  def broadcast_update(analysis)
-    # Use ActionCable to broadcast updates to clients
-    ActionCable.server.broadcast(
-      "ai_analysis_#{analysis.shop_id}",
-      {
-        analysis_id: analysis.id,
-        status: analysis.status,
-        completed: analysis.completed?,
-        results: analysis.completed? ? analysis.results : nil,
-        error: analysis.error_message
-      }
-    )
-  rescue => e
-    Rails.logger.error "Failed to broadcast update: #{e.message}"
   end
 
   def broadcast_draft_created(analysis, draft_product)

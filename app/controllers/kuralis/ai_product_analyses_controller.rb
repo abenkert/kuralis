@@ -5,9 +5,8 @@ module Kuralis
     def index
       @pending_analyses = current_shop.ai_product_analyses.pending&.limit(10)
       @processing_analyses = current_shop.ai_product_analyses.processing&.limit(10)
-      # Show recently completed analyses (drafts are created automatically now)
-      @completed_analyses = current_shop.ai_product_analyses.completed.recent&.limit(20)
-      @draft_products = current_shop.kuralis_products.draft.recent&.limit(20)
+      # Load draft products with their AI analysis for confidence badges
+      @draft_products = current_shop.kuralis_products.draft.includes(:ai_product_analysis, images_attachments: :blob).recent&.limit(20)
     end
 
     def show
@@ -167,8 +166,8 @@ module Kuralis
             next
           end
 
-          # Validate file size (10MB limit for bulk uploads, 5MB for regular)
-          max_size = files.length > 20 ? 10.megabytes : 5.megabytes
+          # Validate file size (10MB limit)
+          max_size = 10.megabytes
           if uploaded_file.size > max_size
             Rails.logger.warn "File #{uploaded_file.original_filename} is too large: #{uploaded_file.size} bytes"
             failed += 1
@@ -196,12 +195,18 @@ module Kuralis
             successful += 1
             analysis_ids << analysis.id
 
-            # For bulk uploads, delay job execution to spread the load
-            if files.length > 20
-              # Stagger job execution over time to prevent overwhelming the system
-              delay = (index / 10.0).minutes # 10 jobs per minute
+            # Queue jobs immediately for faster processing
+            # For large batches, add small staggered delays to prevent overwhelming OpenAI API
+            if files.length > 50
+              # Stagger by 2 seconds per job to respect rate limits
+              delay = (index * 2).seconds
+              AiProductAnalysisJob.set(wait: delay).perform_later(current_shop.id, analysis.id)
+            elsif files.length > 20
+              # Stagger by 1 second per job for medium batches
+              delay = index.seconds
               AiProductAnalysisJob.set(wait: delay).perform_later(current_shop.id, analysis.id)
             else
+              # Process immediately for small batches
               AiProductAnalysisJob.perform_later(current_shop.id, analysis.id)
             end
           else

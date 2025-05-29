@@ -1,3 +1,5 @@
+<%= turbo_stream_from "shop_#{current_shop.id}_analyses" %>
+
 <div class="container-fluid">
   <div class="row mb-4">
     <div class="col">
@@ -8,6 +10,25 @@
       <%= link_to "Back to Products", kuralis_products_path, class: "btn btn-outline-secondary" %>
     </div>
   </div>
+
+  <!-- Real-time Status Banner -->
+  <% if @pending_analyses.any? || @processing_analyses.any? %>
+    <div class="alert alert-info mb-4" id="processing-banner">
+      <div class="d-flex align-items-center">
+        <div class="spinner-border spinner-border-sm text-primary me-3" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <div>
+          <strong>AI Analysis in Progress</strong><br>
+          <small>
+            <%= @processing_analyses.count %> images currently being analyzed, 
+            <%= @pending_analyses.count %> in queue. 
+            <span class="text-muted">This page updates automatically.</span>
+          </small>
+        </div>
+      </div>
+    </div>
+  <% end %>
 
   <div class="row">
     <!-- Upload Section -->
@@ -126,6 +147,7 @@
                 <li><strong>Image Quality:</strong> Clear, well-lit photos work best</li>
                 <li><strong>One Product Per Image:</strong> Separate images for each item</li>
                 <li><strong>Sequential Processing:</strong> Use bulk finalization for efficient workflow</li>
+                <li><strong>Optimized Processing:</strong> Images are automatically compressed for faster AI analysis</li>
               </ul>
             </div>
           </div>
@@ -136,21 +158,13 @@
     <!-- Analysis Results Section -->
     <div class="col-md-7">
       <div class="card shadow mb-4">
-        <div class="card-header py-3">
+        <div class="card-header py-3" id="analysis_counters">
           <ul class="nav nav-tabs card-header-tabs" id="analysisTab" role="tablist">
             <li class="nav-item" role="presentation">
               <button class="nav-link active" id="analyses-tab" data-bs-toggle="tab" data-bs-target="#analyses" type="button" role="tab" aria-controls="analyses" aria-selected="true">
-                <i class="fas fa-spinner me-1"></i> Pending Analyses
+                <i class="fas fa-spinner me-1"></i> Processing
                 <% if @pending_analyses.any? || @processing_analyses.any? %>
                   <span class="badge bg-primary ms-1"><%= @pending_analyses.count + @processing_analyses.count %></span>
-                <% end %>
-              </button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" id="completed-tab" data-bs-toggle="tab" data-bs-target="#completed" type="button" role="tab" aria-controls="completed" aria-selected="false">
-                <i class="fas fa-check-circle me-1"></i> Completed Analyses
-                <% if @completed_analyses.any? %>
-                  <span class="badge bg-success ms-1"><%= @completed_analyses.count %></span>
                 <% end %>
               </button>
             </li>
@@ -178,45 +192,57 @@
                 <div class="text-center py-5">
                   <i class="fas fa-images fa-3x text-muted mb-3"></i>
                   <p class="mb-0">No pending analyses at the moment.</p>
-                  <p class="text-muted">Upload images to begin the AI analysis process.</p>
+                  <p class="text-muted">Upload images to begin the AI analysis process. Draft products are created automatically when analysis completes.</p>
                 </div>
               <% end %>
             </div>
             
-            <!-- Completed Analyses Tab -->
-            <div class="tab-pane fade" id="completed" role="tabpanel" aria-labelledby="completed-tab">
-              <% if @completed_analyses.any? %>
+            <!-- Draft Products Tab -->
+            <div class="tab-pane fade" id="drafts" role="tabpanel" aria-labelledby="drafts-tab">
+              <% if @draft_products.any? %>
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h6 class="mb-0">Recently Completed Analyses</h6>
-                  <small class="text-muted">Draft products are created automatically</small>
+                  <h6 class="mb-0">Draft Products Ready for Finalization</h6>
+                  <%= form_with url: start_finalize_sequence_kuralis_draft_products_path, 
+                                method: :post, 
+                                local: true, 
+                                class: "d-inline" do |form| %>
+                    <%= form.submit "🔄 Finalize All Sequentially", 
+                                    class: "btn btn-warning btn-sm" %>
+                  <% end %>
                 </div>
                 <div class="row">
-                  <% @completed_analyses.each do |analysis| %>
-                    <div class="col-md-6 mb-4" id="analysis_<%= analysis.id %>">
+                  <% @draft_products.each do |product| %>
+                    <div class="col-md-6 mb-4" id="draft_product_<%= product.id %>">
                       <div class="analysis-item position-relative">
-                        <% if analysis.image_attachment.attached? %>
-                          <%= image_tag url_for(analysis.image_attachment), class: "analysis-image" %>
+                        <% if product.images.attached? %>
+                          <%= image_tag product.images.first.variant(resize_to_limit: [300, 200]), 
+                                        class: "analysis-image",
+                                        loading: "lazy",
+                                        style: "object-fit: cover; width: 100%; height: 150px;" %>
                         <% else %>
                           <div class="analysis-image bg-light d-flex align-items-center justify-content-center">
                             <i class="fas fa-image fa-3x text-muted"></i>
                           </div>
                         <% end %>
-                        <div class="analysis-status status-completed">
-                          <i class="fas fa-check me-1"></i>Auto-Draft Created
+                        <div class="analysis-status bg-warning text-dark">
+                          Draft
                         </div>
                         <div class="p-3">
                           <h6 class="mb-2 font-weight-bold">
-                            <%= analysis.suggested_title.presence || "Untitled Product" %>
+                            <%= product.title %>
                           </h6>
-                          <p class="small text-muted mb-2">
-                            <%= truncate(analysis.suggested_description.presence || "No description available", length: 100) %>
+                          <p class="small text-muted mb-3">
+                            <%= truncate(product.description.presence || "No description available", length: 100) %>
                           </p>
-                          <div class="d-flex justify-content-between align-items-center">
-                            <div>
+                          
+                          <!-- AI Confidence Badges -->
+                          <div class="mb-3">
+                            <% if product.ai_product_analysis.present? %>
+                              <% analysis = product.ai_product_analysis %>
                               <% if analysis.suggested_brand.present? %>
                                 <span class="badge bg-info me-1"><%= analysis.suggested_brand %></span>
                               <% end %>
-                              <span class="badge bg-secondary">Price: TBD</span>
+                              <span class="badge bg-secondary me-1">Price: TBD</span>
                               <% if analysis.suggested_category_confidence > 0 %>
                                 <span class="badge bg-<%= analysis.category_confidence_level == 'high' ? 'success' : analysis.category_confidence_level == 'medium' ? 'warning' : 'danger' %> me-1">
                                   Category: <%= (analysis.suggested_category_confidence * 100).round %>%
@@ -242,81 +268,23 @@
                                   <i class="fas fa-exclamation-circle me-1"></i><%= analysis.missing_required_specifics.size %> Missing
                                 </span>
                               <% end %>
-                            </div>
-                            <div>
-                              <% if analysis.has_draft_product? %>
-                                <%= link_to edit_kuralis_product_path(analysis.kuralis_product, finalize: true), 
-                                    class: "btn btn-sm btn-warning" do %>
-                                  <i class="fas fa-edit me-1"></i> Edit Draft
-                                <% end %>
-                              <% else %>
-                                <span class="badge bg-secondary">Processing...</span>
-                              <% end %>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  <% end %>
-                </div>
-              <% else %>
-                <div class="text-center py-5">
-                  <i class="fas fa-check-circle fa-3x text-muted mb-3"></i>
-                  <p class="mb-0">No recently completed analyses.</p>
-                  <p class="text-muted">Upload images to start the AI analysis process.</p>
-                </div>
-              <% end %>
-            </div>
-            
-            <!-- Draft Products Tab -->
-            <div class="tab-pane fade" id="drafts" role="tabpanel" aria-labelledby="drafts-tab">
-              <% if @draft_products.any? %>
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h6 class="mb-0">Draft Products</h6>
-                  <%= form_with url: start_finalize_sequence_kuralis_draft_products_path, 
-                                method: :post, 
-                                local: true, 
-                                class: "d-inline" do |form| %>
-                    <%= form.submit "🔄 Finalize All Sequentially", 
-                                    class: "btn btn-warning btn-sm" %>
-                  <% end %>
-                </div>
-                <div class="row">
-                  <% @draft_products.each do |product| %>
-                    <div class="col-md-6 mb-4" id="draft_product_<%= product.id %>">
-                      <div class="analysis-item position-relative">
-                        <% if product.images.attached? %>
-                          <%= image_tag url_for(product.images.first), class: "analysis-image" %>
-                        <% else %>
-                          <div class="analysis-image bg-light d-flex align-items-center justify-content-center">
-                            <i class="fas fa-image fa-3x text-muted"></i>
-                          </div>
-                        <% end %>
-                        <div class="analysis-status bg-warning text-dark">
-                          Draft
-                        </div>
-                        <div class="p-3">
-                          <h6 class="mb-2 font-weight-bold">
-                            <%= product.title %>
-                          </h6>
-                          <p class="small text-muted mb-2">
-                            <%= truncate(product.description.presence || "No description available", length: 100) %>
-                          </p>
-                          <div class="d-flex justify-content-between align-items-center">
-                            <div>
+                            <% else %>
                               <% if product.brand.present? %>
                                 <span class="badge bg-info me-1"><%= product.brand %></span>
                               <% end %>
                               <% if product.base_price.present? %>
-                                <span class="badge bg-success"><%= number_to_currency(product.base_price) %></span>
+                                <span class="badge bg-success me-1"><%= number_to_currency(product.base_price) %></span>
+                              <% else %>
+                                <span class="badge bg-secondary me-1">Price: TBD</span>
                               <% end %>
-                            </div>
-                            <div>
-                              <%= link_to edit_kuralis_product_path(product, finalize: true), 
-                                  class: "btn btn-sm btn-warning" do %>
-                                <i class="fas fa-edit me-1"></i> Edit & Finalize
-                              <% end %>
-                            </div>
+                            <% end %>
+                          </div>
+                          
+                          <div class="d-flex justify-content-end">
+                            <%= link_to edit_kuralis_product_path(product, finalize: true), 
+                                class: "btn btn-sm btn-warning" do %>
+                              <i class="fas fa-edit me-1"></i> Edit & Finalize
+                            <% end %>
                           </div>
                         </div>
                       </div>
@@ -327,7 +295,7 @@
                 <div class="text-center py-5">
                   <i class="fas fa-pencil-alt fa-3x text-muted mb-3"></i>
                   <p class="mb-0">No draft products available.</p>
-                  <p class="text-muted">Create drafts from completed analyses to see them here.</p>
+                  <p class="text-muted">Upload images to create draft products automatically from AI analysis.</p>
                 </div>
               <% end %>
             </div>
@@ -474,6 +442,15 @@
       // Find and click the drafts tab button
       const draftsTab = document.getElementById('drafts-tab');
       if (draftsTab) draftsTab.click();
+    } else {
+      // If no processing analyses, default to drafts tab
+      const processingCount = <%= (@pending_analyses.count + @processing_analyses.count) %>;
+      const draftsCount = <%= @draft_products.count %>;
+      
+      if (processingCount === 0 && draftsCount > 0) {
+        const draftsTab = document.getElementById('drafts-tab');
+        if (draftsTab) draftsTab.click();
+      }
     }
   });
 
@@ -486,6 +463,15 @@
       // Find and click the drafts tab button
       const draftsTab = document.getElementById('drafts-tab');
       if (draftsTab) draftsTab.click();
+    } else {
+      // If no processing analyses, default to drafts tab
+      const processingCount = <%= (@pending_analyses.count + @processing_analyses.count) %>;
+      const draftsCount = <%= @draft_products.count %>;
+      
+      if (processingCount === 0 && draftsCount > 0) {
+        const draftsTab = document.getElementById('drafts-tab');
+        if (draftsTab) draftsTab.click();
+      }
     }
   });
 </script>

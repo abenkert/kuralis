@@ -426,10 +426,10 @@
   <!-- Action Buttons -->
   <div class="d-flex justify-content-end gap-2 mb-4">
     <% if local_assigns[:show_skip_button] %>
-      <%= link_to "Skip", 
-                  skip_url, 
-                  method: :post,
-                  class: "btn btn-outline-secondary" %>
+      <%= button_to "Skip", 
+                    skip_url, 
+                    method: :post,
+                    class: "btn btn-outline-secondary" %>
     <% end %>
     
     <%= link_to "Cancel", cancel_url, class: "btn btn-outline-secondary" %>

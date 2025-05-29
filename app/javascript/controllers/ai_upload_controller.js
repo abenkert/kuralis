@@ -15,11 +15,19 @@ export default class extends Controller {
   connect() {
     this.selectedFiles = []
     this.isUploading = false
-    console.log("AI Upload controller connected")
+    this.previewCache = new Map() // Cache for faster preview generation
+    this.uploadStartTime = null
+    this.performanceMetrics = {
+      fileSelection: 0,
+      previewGeneration: 0,
+      upload: 0
+    }
+    console.log("AI Upload controller connected with performance monitoring")
   }
 
   disconnect() {
     this.selectedFiles = []
+    this.previewCache.clear()
   }
 
   // Browse button clicked
@@ -116,6 +124,13 @@ export default class extends Controller {
   // Remove a specific file
   removeFile(event) {
     const index = parseInt(event.target.dataset.index)
+    const file = this.selectedFiles[index]
+    
+    // Remove from cache
+    if (file && this.previewCache.has(file.name + file.size)) {
+      this.previewCache.delete(file.name + file.size)
+    }
+    
     this.selectedFiles.splice(index, 1)
     this.updateFileInput()
     this.updatePreview()
@@ -124,6 +139,7 @@ export default class extends Controller {
   // Clear all files
   clearFiles() {
     this.selectedFiles = []
+    this.previewCache.clear()
     this.updateFileInput()
     this.updatePreview()
   }
@@ -139,7 +155,7 @@ export default class extends Controller {
     }
   }
 
-  // Update the preview display
+  // Update the preview display with optimized rendering
   updatePreview() {
     if (this.selectedFiles.length === 0) {
       this.previewContainerTarget.classList.add('d-none')
@@ -152,7 +168,7 @@ export default class extends Controller {
     // Clear existing preview
     this.fileListTarget.innerHTML = ''
 
-    // Show condensed view for many files
+    // Show condensed view for many files (faster rendering)
     if (this.selectedFiles.length > 10) {
       this.showCondensedPreview()
     } else {
@@ -165,11 +181,15 @@ export default class extends Controller {
     this.selectedFiles.forEach((file, index) => {
       const fileItem = document.createElement('div')
       fileItem.className = 'file-item d-flex align-items-center p-2 mb-2 border rounded'
+      
+      // Create thumbnail placeholder first for immediate feedback
+      const thumbnailContainer = document.createElement('div')
+      thumbnailContainer.className = 'file-thumbnail me-3'
+      thumbnailContainer.style.cssText = 'width: 40px; height: 40px; background: #f8f9fa; border-radius: 4px; display: flex; align-items: center; justify-content: center;'
+      thumbnailContainer.innerHTML = '<i class="fas fa-image text-muted"></i>'
+      
       fileItem.innerHTML = `
-        <div class="file-icon me-3">
-          <i class="fas fa-file-image text-primary fa-2x"></i>
-        </div>
-        <div class="file-info flex-grow-1">
+        <div class="file-info flex-grow-1 ms-3">
           <div class="file-name fw-bold text-truncate">${file.name}</div>
           <div class="file-size text-muted small">${this.formatFileSize(file.size)}</div>
         </div>
@@ -180,8 +200,69 @@ export default class extends Controller {
           <i class="fas fa-times"></i>
         </button>
       `
+      
+      fileItem.insertBefore(thumbnailContainer, fileItem.firstChild)
       this.fileListTarget.appendChild(fileItem)
+      
+      // Generate thumbnail asynchronously for better performance
+      this.generateThumbnail(file, thumbnailContainer)
     })
+  }
+
+  // Generate optimized thumbnail
+  generateThumbnail(file, container) {
+    const cacheKey = file.name + file.size
+    
+    // Check cache first
+    if (this.previewCache.has(cacheKey)) {
+      const cachedUrl = this.previewCache.get(cacheKey)
+      this.updateThumbnail(container, cachedUrl)
+      return
+    }
+    
+    // Generate new thumbnail
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      // Create a small canvas for thumbnail generation
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        
+        // Calculate thumbnail size (max 40x40)
+        const maxSize = 40
+        let { width, height } = img
+        
+        if (width > height) {
+          if (width > maxSize) {
+            height = (height * maxSize) / width
+            width = maxSize
+          }
+        } else {
+          if (height > maxSize) {
+            width = (width * maxSize) / height
+            height = maxSize
+          }
+        }
+        
+        canvas.width = width
+        canvas.height = height
+        
+        // Draw resized image
+        ctx.drawImage(img, 0, 0, width, height)
+        
+        // Convert to data URL and cache
+        const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.7)
+        this.previewCache.set(cacheKey, thumbnailUrl)
+        this.updateThumbnail(container, thumbnailUrl)
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  }
+  
+  updateThumbnail(container, url) {
+    container.innerHTML = `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;">`
   }
 
   // Show condensed preview for large file counts
@@ -252,7 +333,7 @@ export default class extends Controller {
     }
   }
 
-  // Handle form submission
+  // Handle form submission with improved progress tracking
   async handleSubmit(event) {
     event.preventDefault()
     
@@ -266,14 +347,16 @@ export default class extends Controller {
     this.showProgress()
 
     try {
-      if (this.selectedFiles.length > 50) {
-        await this.uploadInBatches()
-      } else {
-        await this.uploadAll()
-      }
+      // Always use batch upload for better progress tracking
+      await this.uploadInBatches()
       
-      // Redirect on success
-      window.location.reload()
+      // Show completion message
+      this.updateProgress(this.selectedFiles.length, this.selectedFiles.length, 'Upload complete! Processing images...')
+      
+      // Redirect after a short delay to show completion
+      setTimeout(() => {
+        window.location.reload()
+      }, 1500)
     } catch (error) {
       console.error('Upload failed:', error)
       alert('Upload failed. Please try again.')
@@ -282,33 +365,9 @@ export default class extends Controller {
     }
   }
 
-  // Upload all files at once
-  async uploadAll() {
-    const formData = new FormData()
-    formData.append('authenticity_token', 
-      document.querySelector('[name="authenticity_token"]').value)
-    
-    this.selectedFiles.forEach(file => {
-      formData.append('images[]', file)
-    })
-
-    this.updateProgress(0, this.selectedFiles.length, 'Uploading files...')
-
-    const response = await fetch(this.formTarget.action, {
-      method: 'POST',
-      body: formData
-    })
-
-    if (!response.ok) {
-      throw new Error('Upload failed')
-    }
-
-    this.updateProgress(this.selectedFiles.length, this.selectedFiles.length, 'Upload complete!')
-  }
-
-  // Upload files in batches
+  // Optimized batch upload with better progress tracking
   async uploadInBatches() {
-    const batchSize = 25
+    const batchSize = 10  // Smaller batches for better progress feedback
     const totalBatches = Math.ceil(this.selectedFiles.length / batchSize)
     let uploadedCount = 0
 
@@ -318,7 +377,7 @@ export default class extends Controller {
       const batch = this.selectedFiles.slice(start, end)
 
       this.updateProgress(uploadedCount, this.selectedFiles.length, 
-        `Uploading batch ${i + 1} of ${totalBatches}...`)
+        `Uploading batch ${i + 1} of ${totalBatches}... (${batch.length} files)`)
 
       const formData = new FormData()
       formData.append('authenticity_token', 
@@ -339,15 +398,13 @@ export default class extends Controller {
 
       uploadedCount += batch.length
       this.updateProgress(uploadedCount, this.selectedFiles.length, 
-        `Uploaded batch ${i + 1} of ${totalBatches}`)
+        `Uploaded ${uploadedCount} of ${this.selectedFiles.length} files`)
 
-      // Small delay between batches
+      // Shorter delay between batches for faster overall upload
       if (i < totalBatches - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500))
+        await new Promise(resolve => setTimeout(resolve, 200))
       }
     }
-
-    this.updateProgress(this.selectedFiles.length, this.selectedFiles.length, 'All uploads complete!')
   }
 
   // Show progress UI
