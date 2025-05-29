@@ -60,52 +60,68 @@ module Kuralis
       Rails.logger.debug "Found #{uploaded_files.length} files to process"
 
       if uploaded_files.empty?
-        redirect_to kuralis_ai_product_analyses_path, alert: "Please select at least one image to upload."
+        respond_to do |format|
+          format.html { redirect_to kuralis_ai_product_analyses_path, alert: "Please select at least one image to upload." }
+          format.json { render json: { error: "No images provided" }, status: :unprocessable_entity }
+        end
         return
       end
 
+      # Determine if this is a bulk upload (more than 20 files)
+      is_bulk_upload = uploaded_files.length > 20
+
       successful_uploads = 0
       failed_uploads = 0
+      analysis_ids = []
 
-      uploaded_files.each_with_index do |uploaded_file, index|
-        begin
-          unless uploaded_file.respond_to?(:original_filename) && uploaded_file.respond_to?(:read)
-            Rails.logger.warn "Item #{index} is not a valid file object: #{uploaded_file.class}"
-            next
-          end
+      # Process files in batches for bulk uploads
+      if is_bulk_upload
+        Rails.logger.info "Processing bulk upload of #{uploaded_files.length} files"
 
-          Rails.logger.debug "Processing file #{index}: #{uploaded_file.original_filename} (#{uploaded_file.content_type}, #{uploaded_file.size} bytes)"
+        # Process in batches to avoid overwhelming the system
+        uploaded_files.each_slice(20) do |batch|
+          batch_results = process_file_batch(batch)
+          successful_uploads += batch_results[:successful]
+          failed_uploads += batch_results[:failed]
+          analysis_ids.concat(batch_results[:analysis_ids])
 
-          analysis = current_shop.ai_product_analyses.new(
-            status: "pending",
-            image: uploaded_file.original_filename
-          )
-
-          analysis.image_attachment.attach(uploaded_file)
-
-          if analysis.save
-            Rails.logger.debug "Successfully created analysis record for #{uploaded_file.original_filename}"
-            successful_uploads += 1
-
-            AiProductAnalysisJob.perform_later(current_shop.id, analysis.id)
-          else
-            Rails.logger.error "Failed to save analysis: #{analysis.errors.full_messages.join(', ')}"
-            failed_uploads += 1
-          end
-        rescue => e
-          Rails.logger.error "Error processing file #{index}: #{e.message}"
-          Rails.logger.error e.backtrace.join("\n")
-          failed_uploads += 1
+          # Small delay between batches to prevent overwhelming the job queue
+          sleep(0.1) if uploaded_files.length > 100
         end
+      else
+        # Process normally for smaller uploads
+        batch_results = process_file_batch(uploaded_files)
+        successful_uploads = batch_results[:successful]
+        failed_uploads = batch_results[:failed]
+        analysis_ids = batch_results[:analysis_ids]
       end
 
+      # Prepare response message
       if successful_uploads > 0
         message = "#{successful_uploads} #{'image'.pluralize(successful_uploads)} uploaded and queued for analysis."
         message += " #{failed_uploads} #{'upload'.pluralize(failed_uploads)} failed." if failed_uploads > 0
 
-        redirect_to kuralis_ai_product_analyses_path, notice: message
+        if is_bulk_upload
+          message += " Large uploads are processed in batches - check back in a few minutes for results."
+        end
+
+        respond_to do |format|
+          format.html { redirect_to kuralis_ai_product_analyses_path, notice: message }
+          format.json {
+            render json: {
+              message: message,
+              successful: successful_uploads,
+              failed: failed_uploads,
+              analysis_ids: analysis_ids,
+              is_bulk: is_bulk_upload
+            }
+          }
+        end
       else
-        redirect_to kuralis_ai_product_analyses_path, alert: "No images were uploaded. Please try again."
+        respond_to do |format|
+          format.html { redirect_to kuralis_ai_product_analyses_path, alert: "No images were uploaded. Please try again." }
+          format.json { render json: { error: "No images were uploaded" }, status: :unprocessable_entity }
+        end
       end
     end
 
@@ -134,6 +150,72 @@ module Kuralis
           }
         end
       end
+    end
+
+    private
+
+    def process_file_batch(files)
+      successful = 0
+      failed = 0
+      analysis_ids = []
+
+      files.each_with_index do |uploaded_file, index|
+        begin
+          unless uploaded_file.respond_to?(:original_filename) && uploaded_file.respond_to?(:read)
+            Rails.logger.warn "Item #{index} is not a valid file object: #{uploaded_file.class}"
+            failed += 1
+            next
+          end
+
+          # Validate file size (10MB limit for bulk uploads, 5MB for regular)
+          max_size = files.length > 20 ? 10.megabytes : 5.megabytes
+          if uploaded_file.size > max_size
+            Rails.logger.warn "File #{uploaded_file.original_filename} is too large: #{uploaded_file.size} bytes"
+            failed += 1
+            next
+          end
+
+          # Validate file type
+          unless uploaded_file.content_type&.start_with?("image/")
+            Rails.logger.warn "File #{uploaded_file.original_filename} is not an image: #{uploaded_file.content_type}"
+            failed += 1
+            next
+          end
+
+          Rails.logger.debug "Processing file #{index}: #{uploaded_file.original_filename} (#{uploaded_file.content_type}, #{uploaded_file.size} bytes)"
+
+          analysis = current_shop.ai_product_analyses.new(
+            status: "pending",
+            image: uploaded_file.original_filename
+          )
+
+          analysis.image_attachment.attach(uploaded_file)
+
+          if analysis.save
+            Rails.logger.debug "Successfully created analysis record for #{uploaded_file.original_filename}"
+            successful += 1
+            analysis_ids << analysis.id
+
+            # For bulk uploads, delay job execution to spread the load
+            if files.length > 20
+              # Stagger job execution over time to prevent overwhelming the system
+              delay = (index / 10.0).minutes # 10 jobs per minute
+              AiProductAnalysisJob.set(wait: delay).perform_later(current_shop.id, analysis.id)
+            else
+              AiProductAnalysisJob.perform_later(current_shop.id, analysis.id)
+            end
+          else
+            Rails.logger.error "Failed to save analysis: #{analysis.errors.full_messages.join(', ')}"
+            failed += 1
+          end
+        rescue => e
+          Rails.logger.error "Error processing file #{index}: #{e.message}"
+          Rails.logger.error e.backtrace.join("\n")
+          failed += 1
+        end
+      end
+
+      { successful: successful, failed: failed, analysis_ids: analysis_ids }
     end
   end
 end

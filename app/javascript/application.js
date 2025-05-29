@@ -4,7 +4,6 @@ import "controllers"
 import * as Popper from "@popperjs/core"
 import * as bootstrap from "bootstrap"
 import "./components/ebay_category_selector"
-import "./components/ai_product_analysis"
 
 // Make Popper globally available for Bootstrap
 window.Popper = Popper

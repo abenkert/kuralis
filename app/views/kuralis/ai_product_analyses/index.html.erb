@@ -13,64 +13,121 @@
     <!-- Upload Section -->
     <div class="col-md-5">
       <div class="card shadow mb-4">
-        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+        <div class="card-header py-3">
           <h6 class="m-0 font-weight-bold text-primary">Upload Images</h6>
         </div>
         <div class="card-body">
-          <!-- Hidden form that will be submitted -->
-          <form id="file-upload-form" action="<%= kuralis_ai_product_analyses_path %>" method="post" enctype="multipart/form-data">
-            <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
+          <!-- Upload Form with Stimulus Controller -->
+          <div data-controller="ai-upload" 
+               data-ai-upload-max-files-value="500" 
+               data-ai-upload-max-size-value="10485760">
             
-            <!-- Hidden file input that will hold the files -->
-            <input type="file" id="hidden-file-input" name="images[]" multiple accept="image/*" class="d-none" required>
-            
-            <!-- Basic file input as fallback (hidden with CSS when JS is available) -->
-            <div class="fallback-file-input mb-3">
-              <label for="fallback-file-input" class="form-label">Select images to upload</label>
-              <input type="file" id="fallback-file-input" name="images[]" multiple accept="image/*" class="form-control">
-              <small class="text-muted">For better experience, enable JavaScript for drag and drop functionality.</small>
-            </div>
-            
-            <!-- Drag and drop zone (shown only when JS is available) -->
-            <div id="dropzone" class="dropzone-container mb-4 d-none">
-              <div class="dropzone-content text-center p-4">
+            <form id="ai-upload-form" 
+                  action="<%= kuralis_ai_product_analyses_path %>" 
+                  method="post" 
+                  enctype="multipart/form-data"
+                  data-ai-upload-target="form"
+                  data-action="submit->ai-upload#handleSubmit">
+              <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
+              
+              <!-- Hidden file input -->
+              <input type="file" 
+                     name="images[]" 
+                     multiple 
+                     accept="image/*" 
+                     class="d-none"
+                     data-ai-upload-target="input"
+                     data-action="change->ai-upload#handleFileSelect">
+              
+              <!-- Dropzone Area -->
+              <div class="dropzone-area p-5 text-center border rounded bg-light mb-4"
+                   data-ai-upload-target="dropzone"
+                   data-action="click->ai-upload#browse dragenter->ai-upload#dragEnter dragover->ai-upload#dragOver dragleave->ai-upload#dragLeave drop->ai-upload#handleDrop">
                 <i class="fas fa-cloud-upload-alt fa-3x mb-3 text-muted"></i>
-                <p class="mb-1">Drag and drop images here</p>
-                <p class="text-muted small mb-3">or</p>
-                <button type="button" id="browse-button" class="btn btn-outline-primary">
-                  Browse Files
+                <h5 class="mb-2">Drop images here or click to browse</h5>
+                <p class="text-muted mb-3">Upload multiple product images for AI analysis</p>
+                <button type="button" class="btn btn-outline-primary">
+                  <i class="fas fa-folder-open me-2"></i>Choose Files
                 </button>
-                <p class="text-muted small mt-2">You can upload multiple images</p>
+                <p class="text-muted small mt-3">
+                  <i class="fas fa-info-circle me-1"></i>
+                  Supports JPG, PNG, WebP • Up to 500 images • Max 10MB each
+                </p>
               </div>
-            </div>
-            
-            <!-- Preview zone -->
-            <div id="preview-container" class="mb-4 d-none">
-              <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="mb-0 font-weight-bold">Files selected: <span id="file-count">0</span></h6>
-                <button type="button" id="clear-button" class="btn btn-sm btn-outline-secondary">
-                  Clear
+              
+              <!-- File Preview Area -->
+              <div data-ai-upload-target="previewContainer" class="d-none">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h6 class="mb-0">
+                    <i class="fas fa-images me-2"></i>
+                    Selected Files: <span data-ai-upload-target="fileCount">0</span>
+                  </h6>
+                  <div>
+                    <button type="button" 
+                            class="btn btn-sm btn-outline-secondary me-2"
+                            data-action="click->ai-upload#clearFiles">
+                      <i class="fas fa-trash me-1"></i>Clear All
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- File List -->
+                <div data-ai-upload-target="fileList" class="mb-3"></div>
+                
+                <!-- Upload Progress -->
+                <div data-ai-upload-target="progressContainer" class="d-none">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="small fw-bold">Upload Progress</span>
+                    <span class="small">
+                      <span data-ai-upload-target="progressCurrent">0</span> / 
+                      <span data-ai-upload-target="progressTotal">0</span>
+                    </span>
+                  </div>
+                  <div class="progress mb-2">
+                    <div data-ai-upload-target="progressBar" 
+                         class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" 
+                         style="width: 0%"></div>
+                  </div>
+                  <div class="small text-muted">
+                    <i class="fas fa-spinner fa-spin me-1"></i>
+                    <span data-ai-upload-target="progressStatus">Preparing upload...</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Submit Button -->
+              <div class="d-grid">
+                <button type="submit" 
+                        class="btn btn-primary btn-lg"
+                        data-ai-upload-target="submitButton">
+                  <i class="fas fa-magic me-2"></i>Upload & Analyze Images
                 </button>
               </div>
-              <div id="file-preview-list" class="mb-3"></div>
-            </div>
-            
-            <!-- Submit button -->
-            <div class="d-grid">
-              <button type="submit" id="upload-button" class="btn btn-primary">
-                Upload & Analyze Images
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
           
+          <!-- Instructions -->
           <div class="mt-4">
             <h6 class="font-weight-bold">How it works:</h6>
-            <ol class="small text-muted">
+            <ol class="small text-muted mb-3">
               <li>Upload one or more product images</li>
               <li>Our AI analyzes each image and extracts product details</li>
               <li>Draft products are automatically created from AI analysis</li>
               <li>Review and finalize draft products to list them</li>
             </ol>
+            
+            <div class="alert alert-info small">
+              <h6 class="font-weight-bold text-primary mb-2">
+                <i class="fas fa-lightbulb me-1"></i>Pro Tips for Best Results:
+              </h6>
+              <ul class="mb-0 small">
+                <li><strong>File Names:</strong> Use descriptive names (e.g., "batman-1-cgc-9.8.jpg")</li>
+                <li><strong>Image Quality:</strong> Clear, well-lit photos work best</li>
+                <li><strong>One Product Per Image:</strong> Separate images for each item</li>
+                <li><strong>Sequential Processing:</strong> Use bulk finalization for efficient workflow</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -282,21 +339,20 @@
 </div>
 
 <style>
-  .dropzone-container {
-    border: 2px dashed #ccc;
+  .dropzone-area {
+    border: 2px dashed #dee2e6;
     border-radius: 8px;
     background-color: #f8f9fa;
     transition: all 0.3s ease;
-    min-height: 200px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     cursor: pointer;
   }
   
-  .dropzone-container:hover, .dropzone-active {
+  .dropzone-area:hover,
+  .dropzone-area.dropzone-active {
     border-color: #4e73df;
     background-color: #f0f4ff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(78, 115, 223, 0.15);
   }
   
   .analysis-item {
@@ -347,40 +403,78 @@
     color: white;
   }
   
-  .file-preview-item {
+  /* File preview styles */
+  .file-item {
     background-color: #f8f9fa;
+    transition: all 0.2s ease;
+  }
+  
+  .file-item:hover {
+    background-color: #e9ecef;
+    transform: translateX(4px);
+  }
+  
+  .file-group {
+    background-color: #ffffff;
+    transition: all 0.2s ease;
+  }
+  
+  .file-group:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  .group-header {
+    cursor: pointer;
+  }
+  
+  .group-header:hover {
+    background-color: #e9ecef !important;
+  }
+  
+  /* Progress bar enhancements */
+  .progress {
+    height: 8px;
     border-radius: 4px;
-    padding: 8px 12px;
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
+    background-color: #e9ecef;
   }
   
-  .file-preview-item .file-icon {
-    margin-right: 10px;
-    color: #4e73df;
+  .progress-bar {
+    border-radius: 4px;
+    background: linear-gradient(45deg, #4e73df, #36b9cc);
   }
   
-  .file-preview-item .file-name {
-    flex-grow: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  /* Button enhancements */
+  .btn-primary.btn-lg {
+    padding: 12px 24px;
+    font-weight: 600;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(78, 115, 223, 0.3);
+    transition: all 0.3s ease;
   }
   
-  .file-preview-item .file-size {
-    margin-left: 10px;
-    color: #6c757d;
-    font-size: 0.85em;
+  .btn-primary.btn-lg:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(78, 115, 223, 0.4);
+  }
+  
+  .btn-primary.btn-lg:disabled {
+    transform: none;
+    box-shadow: none;
   }
 </style>
 
 <script>
-  // Simple JS to initialize the proper UI on page load
+  // Initialize tabs on page load
   document.addEventListener('DOMContentLoaded', function() {
-    // Hide the fallback input and show the dropzone when JS is available
-    document.querySelector('.fallback-file-input').classList.add('d-none');
-    document.getElementById('dropzone').classList.remove('d-none');
+    // Check if there's a tab parameter in the URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const tab = urlParams.get('tab');
+    
+    if (tab === 'drafts') {
+      // Find and click the drafts tab button
+      const draftsTab = document.getElementById('drafts-tab');
+      if (draftsTab) draftsTab.click();
+    }
   });
 
   document.addEventListener('turbo:load', function() {

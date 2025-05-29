@@ -1,0 +1,394 @@
+import { Controller } from "@hotwired/stimulus"
+
+export default class extends Controller {
+  static targets = [
+    "form", "input", "dropzone", "previewContainer", "fileList", "fileCount",
+    "submitButton", "progressContainer", "progressBar", "progressCurrent", 
+    "progressTotal", "progressStatus"
+  ]
+  
+  static values = {
+    maxFiles: { type: Number, default: 500 },
+    maxSize: { type: Number, default: 10 * 1024 * 1024 } // 10MB
+  }
+
+  connect() {
+    this.selectedFiles = []
+    this.isUploading = false
+    console.log("AI Upload controller connected")
+  }
+
+  disconnect() {
+    this.selectedFiles = []
+  }
+
+  // Browse button clicked
+  browse(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    this.inputTarget.click()
+  }
+
+  // File input changed
+  handleFileSelect(event) {
+    const files = Array.from(event.target.files)
+    this.addFiles(files)
+  }
+
+  // Drag and drop handlers
+  dragEnter(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    this.dropzoneTarget.classList.add('dropzone-active')
+  }
+
+  dragOver(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    this.dropzoneTarget.classList.add('dropzone-active')
+  }
+
+  dragLeave(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    // Only remove active state if we're leaving the dropzone entirely
+    if (!this.dropzoneTarget.contains(event.relatedTarget)) {
+      this.dropzoneTarget.classList.remove('dropzone-active')
+    }
+  }
+
+  handleDrop(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    this.dropzoneTarget.classList.remove('dropzone-active')
+    
+    const files = Array.from(event.dataTransfer.files)
+    this.addFiles(files)
+  }
+
+  // Add files to selection
+  addFiles(files) {
+    const validFiles = []
+    const errors = []
+
+    files.forEach(file => {
+      // Check file type
+      if (!file.type.startsWith('image/')) {
+        errors.push(`${file.name} is not an image file`)
+        return
+      }
+
+      // Check file size
+      if (file.size > this.maxSizeValue) {
+        errors.push(`${file.name} is too large (max ${this.formatFileSize(this.maxSizeValue)})`)
+        return
+      }
+
+      // Check if we're at max files
+      if (this.selectedFiles.length + validFiles.length >= this.maxFilesValue) {
+        errors.push(`Maximum ${this.maxFilesValue} files allowed`)
+        return
+      }
+
+      // Check for duplicates
+      const isDuplicate = this.selectedFiles.some(existingFile => 
+        existingFile.name === file.name && existingFile.size === file.size
+      )
+      
+      if (!isDuplicate) {
+        validFiles.push(file)
+      }
+    })
+
+    // Show errors if any
+    if (errors.length > 0) {
+      this.showErrors(errors)
+    }
+
+    // Add valid files
+    if (validFiles.length > 0) {
+      this.selectedFiles.push(...validFiles)
+      this.updateFileInput()
+      this.updatePreview()
+    }
+  }
+
+  // Remove a specific file
+  removeFile(event) {
+    const index = parseInt(event.target.dataset.index)
+    this.selectedFiles.splice(index, 1)
+    this.updateFileInput()
+    this.updatePreview()
+  }
+
+  // Clear all files
+  clearFiles() {
+    this.selectedFiles = []
+    this.updateFileInput()
+    this.updatePreview()
+  }
+
+  // Update the hidden file input
+  updateFileInput() {
+    try {
+      const dataTransfer = new DataTransfer()
+      this.selectedFiles.forEach(file => dataTransfer.items.add(file))
+      this.inputTarget.files = dataTransfer.files
+    } catch (error) {
+      console.error("Error updating file input:", error)
+    }
+  }
+
+  // Update the preview display
+  updatePreview() {
+    if (this.selectedFiles.length === 0) {
+      this.previewContainerTarget.classList.add('d-none')
+      return
+    }
+
+    this.previewContainerTarget.classList.remove('d-none')
+    this.fileCountTarget.textContent = this.selectedFiles.length
+
+    // Clear existing preview
+    this.fileListTarget.innerHTML = ''
+
+    // Show condensed view for many files
+    if (this.selectedFiles.length > 10) {
+      this.showCondensedPreview()
+    } else {
+      this.showDetailedPreview()
+    }
+  }
+
+  // Show detailed preview for smaller file counts
+  showDetailedPreview() {
+    this.selectedFiles.forEach((file, index) => {
+      const fileItem = document.createElement('div')
+      fileItem.className = 'file-item d-flex align-items-center p-2 mb-2 border rounded'
+      fileItem.innerHTML = `
+        <div class="file-icon me-3">
+          <i class="fas fa-file-image text-primary fa-2x"></i>
+        </div>
+        <div class="file-info flex-grow-1">
+          <div class="file-name fw-bold text-truncate">${file.name}</div>
+          <div class="file-size text-muted small">${this.formatFileSize(file.size)}</div>
+        </div>
+        <button type="button" 
+                class="btn btn-sm btn-outline-danger"
+                data-index="${index}"
+                data-action="click->ai-upload#removeFile">
+          <i class="fas fa-times"></i>
+        </button>
+      `
+      this.fileListTarget.appendChild(fileItem)
+    })
+  }
+
+  // Show condensed preview for large file counts
+  showCondensedPreview() {
+    // Group files by extension
+    const groups = {}
+    this.selectedFiles.forEach((file, index) => {
+      const ext = file.name.split('.').pop().toLowerCase()
+      if (!groups[ext]) groups[ext] = []
+      groups[ext].push({ file, index })
+    })
+
+    Object.entries(groups).forEach(([ext, items]) => {
+      const totalSize = items.reduce((sum, item) => sum + item.file.size, 0)
+      
+      const groupItem = document.createElement('div')
+      groupItem.className = 'file-group mb-3 border rounded'
+      groupItem.innerHTML = `
+        <div class="group-header p-3 bg-light d-flex align-items-center">
+          <div class="me-3">
+            <i class="fas fa-file-image text-primary fa-2x"></i>
+          </div>
+          <div class="flex-grow-1">
+            <div class="fw-bold">${items.length} ${ext.toUpperCase()} files</div>
+            <div class="text-muted small">Total size: ${this.formatFileSize(totalSize)}</div>
+          </div>
+          <button type="button" 
+                  class="btn btn-sm btn-outline-secondary"
+                  data-action="click->ai-upload#toggleGroup">
+            <i class="fas fa-chevron-down"></i>
+          </button>
+        </div>
+        <div class="group-files d-none p-2">
+          ${items.map(item => `
+            <div class="d-flex align-items-center p-2 border-bottom">
+              <div class="flex-grow-1">
+                <div class="file-name small text-truncate">${item.file.name}</div>
+                <div class="file-size text-muted" style="font-size: 0.75rem">${this.formatFileSize(item.file.size)}</div>
+              </div>
+              <button type="button" 
+                      class="btn btn-sm btn-outline-danger"
+                      data-index="${item.index}"
+                      data-action="click->ai-upload#removeFile">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      `
+      this.fileListTarget.appendChild(groupItem)
+    })
+  }
+
+  // Toggle group expansion
+  toggleGroup(event) {
+    const groupHeader = event.target.closest('.group-header')
+    const groupFiles = groupHeader.nextElementSibling
+    const icon = groupHeader.querySelector('i.fa-chevron-down, i.fa-chevron-up')
+    
+    if (groupFiles.classList.contains('d-none')) {
+      groupFiles.classList.remove('d-none')
+      icon.classList.remove('fa-chevron-down')
+      icon.classList.add('fa-chevron-up')
+    } else {
+      groupFiles.classList.add('d-none')
+      icon.classList.remove('fa-chevron-up')
+      icon.classList.add('fa-chevron-down')
+    }
+  }
+
+  // Handle form submission
+  async handleSubmit(event) {
+    event.preventDefault()
+    
+    if (this.isUploading) return
+    if (this.selectedFiles.length === 0) {
+      alert('Please select at least one image to upload.')
+      return
+    }
+
+    this.isUploading = true
+    this.showProgress()
+
+    try {
+      if (this.selectedFiles.length > 50) {
+        await this.uploadInBatches()
+      } else {
+        await this.uploadAll()
+      }
+      
+      // Redirect on success
+      window.location.reload()
+    } catch (error) {
+      console.error('Upload failed:', error)
+      alert('Upload failed. Please try again.')
+      this.hideProgress()
+      this.isUploading = false
+    }
+  }
+
+  // Upload all files at once
+  async uploadAll() {
+    const formData = new FormData()
+    formData.append('authenticity_token', 
+      document.querySelector('[name="authenticity_token"]').value)
+    
+    this.selectedFiles.forEach(file => {
+      formData.append('images[]', file)
+    })
+
+    this.updateProgress(0, this.selectedFiles.length, 'Uploading files...')
+
+    const response = await fetch(this.formTarget.action, {
+      method: 'POST',
+      body: formData
+    })
+
+    if (!response.ok) {
+      throw new Error('Upload failed')
+    }
+
+    this.updateProgress(this.selectedFiles.length, this.selectedFiles.length, 'Upload complete!')
+  }
+
+  // Upload files in batches
+  async uploadInBatches() {
+    const batchSize = 25
+    const totalBatches = Math.ceil(this.selectedFiles.length / batchSize)
+    let uploadedCount = 0
+
+    for (let i = 0; i < totalBatches; i++) {
+      const start = i * batchSize
+      const end = Math.min(start + batchSize, this.selectedFiles.length)
+      const batch = this.selectedFiles.slice(start, end)
+
+      this.updateProgress(uploadedCount, this.selectedFiles.length, 
+        `Uploading batch ${i + 1} of ${totalBatches}...`)
+
+      const formData = new FormData()
+      formData.append('authenticity_token', 
+        document.querySelector('[name="authenticity_token"]').value)
+      
+      batch.forEach(file => {
+        formData.append('images[]', file)
+      })
+
+      const response = await fetch(this.formTarget.action, {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) {
+        throw new Error(`Batch ${i + 1} upload failed`)
+      }
+
+      uploadedCount += batch.length
+      this.updateProgress(uploadedCount, this.selectedFiles.length, 
+        `Uploaded batch ${i + 1} of ${totalBatches}`)
+
+      // Small delay between batches
+      if (i < totalBatches - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    }
+
+    this.updateProgress(this.selectedFiles.length, this.selectedFiles.length, 'All uploads complete!')
+  }
+
+  // Show progress UI
+  showProgress() {
+    this.progressContainerTarget.classList.remove('d-none')
+    this.submitButtonTarget.disabled = true
+    this.submitButtonTarget.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...'
+  }
+
+  // Hide progress UI
+  hideProgress() {
+    this.progressContainerTarget.classList.add('d-none')
+    this.submitButtonTarget.disabled = false
+    this.submitButtonTarget.innerHTML = '<i class="fas fa-magic me-2"></i>Upload & Analyze Images'
+  }
+
+  // Update progress display
+  updateProgress(current, total, status) {
+    const percentage = total > 0 ? (current / total) * 100 : 0
+    
+    this.progressCurrentTarget.textContent = current
+    this.progressTotalTarget.textContent = total
+    this.progressStatusTarget.textContent = status
+    this.progressBarTarget.style.width = `${percentage}%`
+  }
+
+  // Show error messages
+  showErrors(errors) {
+    const errorMessage = errors.length === 1 
+      ? errors[0] 
+      : `${errors.length} files were skipped:\n${errors.join('\n')}`
+    
+    alert(errorMessage)
+  }
+
+  // Format file size
+  formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+} 
