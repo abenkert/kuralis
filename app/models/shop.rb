@@ -3,6 +3,9 @@
 class Shop < ApplicationRecord
   include ShopifyApp::ShopSessionStorageWithScopes
 
+  # Encrypt sensitive Shopify token
+  encrypts :shopify_token
+
   has_one :shopify_ebay_account, dependent: :destroy
   has_many :kuralis_products, dependent: :destroy
   has_many :orders, dependent: :destroy

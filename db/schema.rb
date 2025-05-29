@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_25_010314) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_29_144249) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -343,7 +343,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_25_010314) do
 
   create_table "shops", force: :cascade do |t|
     t.string "shopify_domain", null: false
-    t.string "shopify_token", null: false
+    t.string "shopify_token"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "access_scopes", default: "", null: false

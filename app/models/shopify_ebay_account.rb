@@ -2,6 +2,10 @@ class ShopifyEbayAccount < ApplicationRecord
   belongs_to :shop
   has_many :ebay_listings, dependent: :destroy
 
+  # Encrypt sensitive eBay tokens
+  encrypts :access_token
+  encrypts :refresh_token
+
   validates :shop, presence: true
   validates :access_token, presence: true
 
