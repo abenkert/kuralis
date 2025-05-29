@@ -5,7 +5,7 @@
     <div class="btn-group">
       <%= link_to "All", kuralis_products_path(filter: 'all'), 
           class: "btn #{@filter == 'all' ? 'btn-primary' : 'btn-outline-secondary'}" %>
-      <%= link_to "Unlisted", kuralis_products_path(filter: 'unlisted'), 
+      <%= link_to "Available", kuralis_products_path(filter: 'unlisted'), 
           class: "btn #{@filter == 'unlisted' ? 'btn-primary' : 'btn-outline-secondary'}" %>
       <%= link_to "On Shopify", kuralis_products_path(filter: 'shopify'), 
           class: "btn #{@filter == 'shopify' ? 'btn-primary' : 'btn-outline-secondary'}" %>
@@ -67,7 +67,6 @@
               options_for_select([
                 ["All Fields", "all"],
                 ["Title", "title"],
-                ["SKU", "sku"],
                 ["Location", "location"],
                 ["Description", "description"]
               ], params[:search_by] || "all"),
@@ -139,8 +138,8 @@
                 <th></th>
                 <th>Image</th>
                 <th>Title</th>
-                <th>SKU</th>
-                <th>Base Price</th>
+                <th>Quantity</th>
+                <th>Price</th>
                 <th>Location</th>
                 <th>Source</th>
                 <% if @filter == 'draft' %>
@@ -149,7 +148,7 @@
                   <th>Shopify Status</th>
                   <th>eBay Status</th>
                 <% end %>
-                <th>Last Synced</th>
+                <th>Created</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -181,12 +180,32 @@
                   <td>
                     <%= product.title %>
                     <% if product.draft? %>
-                      <span class="badge bg-warning text-dark">Draft</span>
+                      <span class="badge bg-warning text-dark ms-2">Draft</span>
+                    <% end %>
+                    <% if product.tags.present? %>
+                      <div class="mt-1">
+                        <% product.tags.first(3).each do |tag| %>
+                          <span class="badge bg-light text-dark me-1" style="font-size: 0.7em;"><%= tag %></span>
+                        <% end %>
+                        <% if product.tags.length > 3 %>
+                          <span class="badge bg-light text-dark" style="font-size: 0.7em;">+<%= product.tags.length - 3 %> more</span>
+                        <% end %>
+                      </div>
                     <% end %>
                   </td>
-                  <td><%= product.sku %></td>
-                  <td><%= number_to_currency(product.base_price) %></td>
-                  <td><%= product.location %></td>
+                  <td>
+                    <% if product.base_quantity == 0 %>
+                      <span class="badge bg-danger">0</span>
+                    <% elsif product.base_quantity <= 5 %>
+                      <span class="badge bg-warning text-dark"><%= product.base_quantity %></span>
+                    <% else %>
+                      <span class="badge bg-success"><%= product.base_quantity %></span>
+                    <% end %>
+                  </td>
+                  <td><%= number_to_currency(product.base_price) if product.base_price.present? %></td>
+                  <td>
+                    <%= product.location if product.location.present? %>
+                  </td>
                   <td>
                     <span class="badge <%= product.source_platform == 'ai' ? 'bg-info' : 'bg-secondary' %>">
                       <%= product.source_platform&.titleize %>
@@ -207,10 +226,17 @@
                         </span>
                       <% end %>
                       <% @collector.not_active_on_shopify?(product) do %>
-                        <span class="badge bg-secondary d-inline-flex align-items-center">
-                          <i class="bi bi-dash-circle me-1"></i>
-                          Unlisted
-                        </span>
+                        <% if product.base_quantity == 0 %>
+                          <span class="badge bg-info d-inline-flex align-items-center">
+                            <i class="bi bi-check-circle me-1"></i>
+                            Completed
+                          </span>
+                        <% else %>
+                          <span class="badge bg-secondary d-inline-flex align-items-center">
+                            <i class="bi bi-dash-circle me-1"></i>
+                            Unlisted
+                          </span>
+                        <% end %>
                       <% end %>
                     </td>
                     <td>
@@ -222,15 +248,24 @@
                         </span>
                       <% end %>
                       <% @collector.not_active_on_ebay?(product) do %>
-                        <span class="badge bg-secondary d-inline-flex align-items-center">
-                          <i class="bi bi-dash-circle me-1"></i>
-                          Unlisted
-                        </span>
+                        <% if product.base_quantity == 0 %>
+                          <span class="badge bg-info d-inline-flex align-items-center">
+                            <i class="bi bi-check-circle me-1"></i>
+                            Completed
+                          </span>
+                        <% else %>
+                          <span class="badge bg-secondary d-inline-flex align-items-center">
+                            <i class="bi bi-dash-circle me-1"></i>
+                            Unlisted
+                          </span>
+                        <% end %>
                       <% end %>
                     </td>
                   <% end %>
                   <td>
-                    <%= time_ago_in_words(product.last_synced_at) if product.last_synced_at %> ago
+                    <span class="text-muted" style="font-size: 0.85em;">
+                      <%= time_ago_in_words(product.created_at) %> ago
+                    </span>
                   </td>
                   <td>
                     <div class="dropdown">

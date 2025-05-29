@@ -296,13 +296,16 @@
                 eBay Condition <span class="text-danger">*</span>
               <% end %>
               <%= ebay_form.select :condition_id, 
-                  [
-                    ["Brand New", "1000"],
-                    ["Like New", "2750"],
-                    ["Very Good", "4000"],
-                    ["Good", "5000"],
-                    ["Acceptable", "6000"],
-                  ], 
+                  options_for_select(
+                    [
+                      ["Brand New", "1000"],
+                      ["Like New", "2750"],
+                      ["Very Good", "4000"],
+                      ["Good", "5000"],
+                      ["Acceptable", "6000"],
+                    ], 
+                    product.ebay_product_attribute&.condition_id || current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], 'default_condition')
+                  ), 
                   { include_blank: "Select Condition" }, 
                   { class: "form-select" } 
               %>
@@ -315,15 +318,18 @@
                 Listing Duration <span class="text-danger">*</span>
               <% end %>
               <%= ebay_form.select :listing_duration, 
-                  [
-                    ["Good 'Til Cancelled", "GTC"],
-                    ["1 Day", "Days_1"],
-                    ["3 Days", "Days_3"],
-                    ["5 Days", "Days_5"],
-                    ["7 Days", "Days_7"],
-                    ["10 Days", "Days_10"],
-                    ["30 Days", "Days_30"]
-                  ], 
+                  options_for_select(
+                    [
+                      ["Good 'Til Cancelled", "GTC"],
+                      ["1 Day", "Days_1"],
+                      ["3 Days", "Days_3"],
+                      ["5 Days", "Days_5"],
+                      ["7 Days", "Days_7"],
+                      ["10 Days", "Days_10"],
+                      ["30 Days", "Days_30"]
+                    ], 
+                    product.ebay_product_attribute&.listing_duration || current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], 'default_duration')
+                  ), 
                   { include_blank: "Select Duration" }, 
                   { class: "form-select" } 
               %>
@@ -344,7 +350,7 @@
                     (defined?(current_shop) ? current_shop.shopify_ebay_account&.shipping_profiles&.map { |p| 
                       [p["name"], p["id"]] 
                     } : []) || [],
-                    product.ebay_product_attribute&.shipping_profile_id
+                    product.ebay_product_attribute&.shipping_profile_id || (defined?(current_shop) ? current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], 'default_shipping_policy') : nil)
                   ),
                   { include_blank: "Select Shipping Policy" }, 
                   { class: "form-select" } 
@@ -360,9 +366,9 @@
               <%= ebay_form.select :return_profile_id, 
                   options_for_select(
                     (defined?(current_shop) ? current_shop.shopify_ebay_account&.return_profiles&.map { |p| 
-                      [p["profile_name"], p["profile_id"]] 
+                      [p["profile_name"] || p["name"], p["profile_id"] || p["id"]] 
                     } : []) || [],
-                    product.ebay_product_attribute&.return_profile_id
+                    product.ebay_product_attribute&.return_profile_id || (defined?(current_shop) ? current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], 'default_return_policy') : nil)
                   ),
                   { include_blank: "Select Return Policy" }, 
                   { class: "form-select" } 
@@ -378,9 +384,9 @@
               <%= ebay_form.select :payment_profile_id, 
                   options_for_select(
                     (defined?(current_shop) ? current_shop.shopify_ebay_account&.payment_profiles&.map { |p| 
-                      [p["profile_name"], p["profile_id"]] 
+                      [p["profile_name"] || p["name"], p["profile_id"] || p["id"]] 
                     } : []) || [],
-                    product.ebay_product_attribute&.payment_profile_id
+                    product.ebay_product_attribute&.payment_profile_id || (defined?(current_shop) ? current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], 'default_payment_policy') : nil)
                   ),
                   { include_blank: "Select Payment Policy" }, 
                   { class: "form-select" } 

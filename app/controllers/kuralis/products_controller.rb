@@ -23,15 +23,13 @@ module Kuralis
         case @search_by
         when "title"
           base_query = base_query.where("kuralis_products.title ILIKE ?", "%#{@query}%")
-        when "sku"
-          base_query = base_query.where("kuralis_products.sku ILIKE ?", "%#{@query}%")
         when "location"
           base_query = base_query.where("kuralis_products.location ILIKE ?", "%#{@query}%")
         when "description"
           base_query = base_query.where("kuralis_products.description ILIKE ?", "%#{@query}%")
         else # "all" or any other value
-          base_query = base_query.where("kuralis_products.title ILIKE ? OR kuralis_products.sku ILIKE ? OR kuralis_products.location ILIKE ? OR kuralis_products.description ILIKE ?",
-                                    "%#{@query}%", "%#{@query}%", "%#{@query}%", "%#{@query}%")
+          base_query = base_query.where("kuralis_products.title ILIKE ? OR kuralis_products.location ILIKE ? OR kuralis_products.description ILIKE ?",
+                                    "%#{@query}%", "%#{@query}%", "%#{@query}%")
         end
       end
 
@@ -46,7 +44,16 @@ module Kuralis
         @editing_draft = true
       else
         @product = KuralisProduct.new
-        @product.build_ebay_product_attribute
+        # Build eBay product attribute with default values
+        ebay_attr = @product.build_ebay_product_attribute
+
+        # Apply default values from shop settings
+        ebay_attr.condition_id = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_condition")
+        ebay_attr.listing_duration = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_duration")
+        ebay_attr.shipping_profile_id = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_shipping_policy")
+        ebay_attr.payment_profile_id = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_payment_policy")
+        ebay_attr.return_profile_id = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_return_policy")
+        ebay_attr.best_offer_enabled = true # Default to enabled
       end
     end
 
@@ -98,7 +105,19 @@ module Kuralis
 
     def edit
       @product = current_shop.kuralis_products.find(params[:id])
-      @product.build_ebay_product_attribute unless @product.ebay_product_attribute
+
+      # Build eBay product attribute with defaults if it doesn't exist
+      unless @product.ebay_product_attribute
+        ebay_attr = @product.build_ebay_product_attribute
+
+        # Apply default values from shop settings
+        ebay_attr.condition_id = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_condition")
+        ebay_attr.listing_duration = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_duration")
+        ebay_attr.shipping_profile_id = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_shipping_policy")
+        ebay_attr.payment_profile_id = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_payment_policy")
+        ebay_attr.return_profile_id = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_return_policy")
+        ebay_attr.best_offer_enabled = true # Default to enabled
+      end
     end
 
     def update
@@ -267,6 +286,18 @@ module Kuralis
           if ebay_attr.return_profile_id.blank?
             default_return = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_return_policy")
             ebay_attr.update(return_profile_id: default_return) if default_return.present?
+          end
+
+          # Apply default condition if not set
+          if ebay_attr.condition_id.blank?
+            default_condition = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_condition")
+            ebay_attr.update(condition_id: default_condition) if default_condition.present?
+          end
+
+          # Apply default listing duration if not set
+          if ebay_attr.listing_duration.blank?
+            default_duration = current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_duration")
+            ebay_attr.update(listing_duration: default_duration) if default_duration.present?
           end
         end
 

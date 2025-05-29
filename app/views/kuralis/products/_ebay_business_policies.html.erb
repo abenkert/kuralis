@@ -10,7 +10,7 @@
               current_shop.shopify_ebay_account&.shipping_profiles&.map { |p| 
                 [p["name"], p["id"]] 
               } || [],
-              product.ebay_product_attribute&.shipping_profile_id || KuralisShopSetting.get_setting(current_shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_shipping_policy')
+              product.ebay_product_attribute&.shipping_profile_id || current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], 'default_shipping_policy')
             ),
             { include_blank: "Select Shipping Policy" }, 
             { class: "form-select" } 
@@ -28,9 +28,9 @@
         <%= ebay_fields.select :return_profile_id, 
             options_for_select(
               current_shop.shopify_ebay_account&.return_profiles&.map { |p| 
-                [p["profile_name"], p["profile_id"]] 
+                [p["profile_name"] || p["name"], p["profile_id"] || p["id"]] 
               } || [],
-              product.ebay_product_attribute&.return_profile_id || KuralisShopSetting.get_setting(current_shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_return_policy')
+              product.ebay_product_attribute&.return_profile_id || current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], 'default_return_policy')
             ),
             { include_blank: "Select Return Policy" }, 
             { class: "form-select" } 
@@ -48,9 +48,9 @@
         <%= ebay_fields.select :payment_profile_id, 
             options_for_select(
               current_shop.shopify_ebay_account&.payment_profiles&.map { |p| 
-                [p["profile_name"], p["profile_id"]] 
+                [p["profile_name"] || p["name"], p["profile_id"] || p["id"]] 
               } || [],
-              product.ebay_product_attribute&.payment_profile_id || KuralisShopSetting.get_setting(current_shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_payment_policy')
+              product.ebay_product_attribute&.payment_profile_id || current_shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], 'default_payment_policy')
             ),
             { include_blank: "Select Payment Policy" }, 
             { class: "form-select" } 

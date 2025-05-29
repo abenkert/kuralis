@@ -119,8 +119,18 @@ class KuralisProduct < ApplicationRecord
     attrs = ebay_product_attribute
 
     errors << "eBay category is required" if attrs.category_id.blank?
-    errors << "eBay condition is required" if attrs.condition_id.blank?
-    errors << "Listing duration is required" if attrs.listing_duration.blank?
+
+    # Check condition - use default if not set
+    if attrs.condition_id.blank?
+      default_condition = shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_condition")
+      errors << "eBay condition is required" if default_condition.blank?
+    end
+
+    # Check listing duration - use default if not set
+    if attrs.listing_duration.blank?
+      default_duration = shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_duration")
+      errors << "Listing duration is required" if default_duration.blank?
+    end
 
     # For payment, shipping, and return policies, check both the attribute and the default setting
     shop = self.shop
@@ -225,10 +235,24 @@ class KuralisProduct < ApplicationRecord
       # Now that the product is saved with an ID, create eBay product attributes if available
       if analysis.suggested_ebay_category.present?
         p "Creating eBay product attribute"
-        # Create eBay product attribute directly
+
+        # Get default values from shop settings
+        default_condition = shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_condition")
+        default_duration = shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_duration")
+        default_shipping = shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_shipping_policy")
+        default_payment = shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_payment_policy")
+        default_return = shop.get_setting(KuralisShopSetting::CATEGORIES[:ebay], "default_return_policy")
+
+        # Create eBay product attribute directly with defaults applied
         ebay_attr = EbayProductAttribute.create(
           kuralis_product_id: draft_product.id,
-          category_id: analysis.suggested_ebay_category
+          category_id: analysis.suggested_ebay_category,
+          condition_id: default_condition,
+          listing_duration: default_duration,
+          shipping_profile_id: default_shipping,
+          payment_profile_id: default_payment,
+          return_profile_id: default_return,
+          best_offer_enabled: true # Default to enabled
         )
 
         # Get all item specifics for the category

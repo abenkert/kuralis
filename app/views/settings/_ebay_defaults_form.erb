@@ -36,6 +36,46 @@
             { include_blank: "Select a return profile" },
             class: "form-select" %>
     </div>
+
+    <!-- Default Condition -->
+    <div class="col-12">
+        <label class="form-label">Default Condition</label>
+        <%= f.select "settings[ebay][default_condition]",
+            options_for_select(
+                [
+                    ["Brand New", "1000"],
+                    ["Like New", "2750"],
+                    ["Very Good", "4000"],
+                    ["Good", "5000"],
+                    ["Acceptable", "6000"],
+                ],
+                KuralisShopSetting.get_setting(@shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_condition')
+            ),
+            { include_blank: "Select a default condition" },
+            class: "form-select" %>
+        <small class="form-text text-muted">This condition will be pre-selected for new products</small>
+    </div>
+
+    <!-- Default Duration -->
+    <div class="col-12">
+        <label class="form-label">Default Listing Duration</label>
+        <%= f.select "settings[ebay][default_duration]",
+            options_for_select(
+                [
+                    ["Good 'Til Cancelled", "GTC"],
+                    ["1 Day", "Days_1"],
+                    ["3 Days", "Days_3"],
+                    ["5 Days", "Days_5"],
+                    ["7 Days", "Days_7"],
+                    ["10 Days", "Days_10"],
+                    ["30 Days", "Days_30"]
+                ],
+                KuralisShopSetting.get_setting(@shop, KuralisShopSetting::CATEGORIES[:ebay], 'default_duration')
+            ),
+            { include_blank: "Select a default duration" },
+            class: "form-select" %>
+        <small class="form-text text-muted">This duration will be pre-selected for new products</small>
+    </div>
     </div>
     
     <div class="mt-4">
