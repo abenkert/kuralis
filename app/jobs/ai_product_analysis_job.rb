@@ -193,34 +193,7 @@ class AiProductAnalysisJob < ApplicationJob
     category_prompt = Ai::EbayCategoryService.generate_ebay_category_prompt
 
     # Enhanced prompt with relevant eBay category examples
-    prompt = <<~PROMPT
-      Analyze this product image and extract detailed information. Based on the image, this appears to be a #{product_type}.
-
-      Here are some relevant eBay category examples for this type of product:
-      #{category_examples}
-
-      Please provide a JSON response with the following structure:
-      {
-        "title": "Specific product title with key details",
-        "description": "Detailed description including condition, features, and relevant details",
-        "brand": "Brand or publisher name",
-        "condition": "Product condition (new, like_new, very_good, good, acceptable)",
-        "category": "General product category",
-        "ebay_category": "Most specific eBay category path from the examples above",
-        "item_specifics": {
-          "key": "value pairs of important product attributes"
-        },
-        "tags": ["relevant", "search", "tags"],
-        "confidence_notes": {
-          "category_confidence": 0.85,
-          "specifics_confidence": 0.75,
-          "overall_confidence": 0.80
-        }
-      }
-
-      Focus on accuracy and be specific. If you cannot determine certain details, use reasonable defaults or leave fields empty.
-      Return ONLY the JSON response, no additional text.
-    PROMPT
+    prompt = generate_enhanced_prompt(product_type, category_examples)
 
     messages = [
       {
@@ -230,12 +203,12 @@ class AiProductAnalysisJob < ApplicationJob
       {
         role: "user",
         content: [
-          { type: "text", text: prompt },
+          { type: "text", text: "Analyze this product image and extract detailed information. Based on the image, this appears to be a #{product_type}.\n\nHere are some relevant eBay category examples for this type of product:\n#{category_examples}\n\n#{prompt}\n\nReturn ONLY the JSON response, no additional text." },
           {
             type: "image_url",
             image_url: {
               url: "data:image/jpeg;base64,#{base64_image}",
-              detail: "low"  # Changed from "high" to "low" for much faster processing
+              detail: product_type.match?(/comic book|comic|manga|graphic novel/) ? "high" : "low"  # Use high detail for comics to read text clearly
             }
           }
         ]
@@ -386,16 +359,80 @@ class AiProductAnalysisJob < ApplicationJob
     end
   end
 
+  # Enhanced prompt generation based on product type
+  def generate_enhanced_prompt(product_type, category_examples)
+    base_structure = <<~BASE
+      Please provide a JSON response with the following structure:
+      {
+        "title": "Specific product title with key details",
+        "description": "Detailed description including condition, features, and relevant details",
+        "brand": "Brand or publisher name",
+        "condition": "Product condition (new, like_new, very_good, good, acceptable)",
+        "category": "General product category",
+        "ebay_category": "Most specific eBay category path from the examples above",
+        "item_specifics": {
+          "key": "value pairs of important product attributes"
+        },
+        "tags": ["relevant", "search", "tags"],
+        "confidence_notes": {
+          "category_confidence": 0.85,
+          "specifics_confidence": 0.75,
+          "overall_confidence": 0.80
+        }
+      }
+    BASE
+
+    case product_type
+    when /comic book|comic|manga|graphic novel/
+      <<~COMIC_PROMPT
+        #{base_structure}
+
+        **CRITICAL FOR COMIC BOOKS**: Pay special attention to these details:
+
+        1. **ISSUE NUMBER**: Look very carefully at the cover for the issue number. It's usually displayed prominently on the front cover, often as "#1", "#2", "Vol 1 #1", etc. This is ESSENTIAL for comic identification.
+
+        2. **SERIES TITLE**: The main title of the comic series (e.g., "Amazing Spider-Man", "Fathom", "X-Men")
+
+        3. **PUBLISHER**: Look for publisher logos/names (Marvel, DC, Image, Top Cow, Dark Horse, etc.)
+
+        4. **PUBLICATION DATE**: Look for month/year on the cover or spine (e.g., "March 2023", "2023")
+
+        5. **VARIANT COVERS**: Note if it says "Variant", "Cover A/B/C", "1:10", "1:25", etc.
+
+        6. **CONDITION**: Assess visible wear, creases, spine stress, corner damage
+
+        For item_specifics, include:
+        - "Issue Number": The specific issue number (REQUIRED)
+        - "Series Title": The main series name
+        - "Publisher": The publishing company
+        - "Publication Year": Specific year if visible
+        - "Publication Month": Month if visible
+        - "Format": "Single Issue" or "Trade Paperback" or "Graphic Novel"
+        - "Variant": If it's a variant cover
+        - "Key Issue": If it's a first appearance, death, origin, etc.
+        - "Grade": Your assessment of condition
+        - "Era": "Modern Age (1985-Present)", "Copper Age (1984-1991)", etc.
+
+        Focus on accuracy over speed. If you can't clearly see the issue number, say "Issue number not clearly visible" rather than guessing.
+      COMIC_PROMPT
+    else
+      base_structure + "\n\nFocus on accuracy and be specific. If you cannot determine certain details, use reasonable defaults or leave fields empty."
+    end
+  end
+
   # Category examples for different product types
   def get_books_comics_categories
     [
       "Collectibles > Comic Books & Memorabilia > Comics > Comics & Graphic Novels",
-      "Collectibles > Comic Books & Memorabilia > Comics > Comic Strips",
-      "Books > Fiction & Literature",
-      "Books > Textbooks, Education & Reference",
-      "Books > Children & Young Adults",
-      "Books > Antiquarian & Collectible",
-      "Collectibles > Comic Books & Memorabilia > Manga & Asian Comics"
+      "Collectibles > Comic Books & Memorabilia > Comics > Single Issues > Modern Age (1992-Now)",
+      "Collectibles > Comic Books & Memorabilia > Comics > Single Issues > Copper Age (1984-1991)",
+      "Collectibles > Comic Books & Memorabilia > Comics > Single Issues > Bronze Age (1970-1983)",
+      "Collectibles > Comic Books & Memorabilia > Comics > Single Issues > Silver Age (1956-1969)",
+      "Collectibles > Comic Books & Memorabilia > Comics > Single Issues > Golden Age (1938-1955)",
+      "Collectibles > Comic Books & Memorabilia > Comics > Trade Paperbacks & Hardcovers",
+      "Collectibles > Comic Books & Memorabilia > Comics > Manga & Asian Comics",
+      "Collectibles > Comic Books & Memorabilia > Comics > Independent & Small Press",
+      "Collectibles > Comic Books & Memorabilia > Comics > Variant Covers"
     ].join("\n")
   end
 
@@ -706,6 +743,11 @@ class AiProductAnalysisJob < ApplicationJob
 
     if result["confidence_notes"]["specifics_confidence"].present? && result["confidence_notes"]["specifics_confidence"] < 0.6
       result["requires_specifics_review"] = true
+    end
+
+    # Special validation for comic books
+    if data["category"]&.downcase&.include?("comic") || data["ebay_category_path"]&.include?("Comic")
+      validate_comic_book_specifics(result)
     end
 
     # Log the result for debugging
@@ -1077,7 +1119,18 @@ class AiProductAnalysisJob < ApplicationJob
       "series title" => [ "series", "series title", "title series" ],
       "issue number" => [ "issue", "issue number", "#", "number" ],
       "format" => [ "format", "type", "binding" ],
-      "language" => [ "language", "text language" ]
+      "language" => [ "language", "text language" ],
+      # Comic book specific mappings
+      "publication month" => [ "publication month", "month", "cover date" ],
+      "era" => [ "era", "age", "comic age", "publication era" ],
+      "variant" => [ "variant", "variant cover", "cover variant", "special cover" ],
+      "key issue" => [ "key issue", "first appearance", "origin", "death", "key" ],
+      "grade" => [ "grade", "condition grade", "comic grade" ],
+      "certification" => [ "certification", "cgc", "cbcs", "graded" ],
+      "artist" => [ "artist", "penciler", "illustrator", "cover artist" ],
+      "writer" => [ "writer", "author", "story by" ],
+      "universe" => [ "universe", "marvel universe", "dc universe" ],
+      "team" => [ "team", "superhero team", "group" ]
     }
 
     mappings[aspect_name.downcase]
@@ -1091,5 +1144,46 @@ class AiProductAnalysisJob < ApplicationJob
       missing_required: [],
       available_aspects: []
     }
+  end
+
+  # Validate comic book specific requirements
+  def validate_comic_book_specifics(result)
+    item_specifics = result["item_specifics"] || {}
+
+    # Check for critical comic book fields
+    issue_number = item_specifics["Issue Number"] || item_specifics["issue number"] ||
+                   item_specifics["Issue"] || item_specifics["#"]
+
+    series_title = item_specifics["Series Title"] || item_specifics["series title"] ||
+                   item_specifics["Series"] || item_specifics["Title"]
+
+    publisher = item_specifics["Publisher"] || item_specifics["publisher"] ||
+                result["brand"]
+
+    # Flag for review if critical fields are missing
+    missing_critical = []
+    missing_critical << "Issue Number" if issue_number.blank?
+    missing_critical << "Series Title" if series_title.blank?
+    missing_critical << "Publisher" if publisher.blank?
+
+    if missing_critical.any?
+      result["requires_specifics_review"] = true
+      result["missing_critical_comic_fields"] = missing_critical
+      Rails.logger.warn "Comic book missing critical fields: #{missing_critical.join(', ')}"
+    end
+
+    # Enhance title with issue number if available and not already included
+    if issue_number.present? && series_title.present?
+      enhanced_title = "#{series_title} ##{issue_number}"
+      enhanced_title += " - #{publisher}" if publisher.present?
+
+      # Only update if current title doesn't already include issue number
+      unless result["title"].include?("#") || result["title"].include?("Issue")
+        result["title"] = enhanced_title
+        Rails.logger.info "Enhanced comic title: #{enhanced_title}"
+      end
+    end
+
+    result
   end
 end
