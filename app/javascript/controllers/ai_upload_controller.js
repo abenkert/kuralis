@@ -17,12 +17,20 @@ export default class extends Controller {
     this.isUploading = false
     this.previewCache = new Map() // Cache for faster preview generation
     this.uploadStartTime = null
+    this.directUploads = new Map() // Track direct uploads
     this.performanceMetrics = {
       fileSelection: 0,
       previewGeneration: 0,
       upload: 0
     }
-    console.log("AI Upload controller connected with performance monitoring")
+    console.log("AI Upload controller connected with direct upload support")
+    
+    // Listen for direct upload events
+    this.element.addEventListener('direct-upload:initialize', this.handleDirectUploadInitialize.bind(this))
+    this.element.addEventListener('direct-upload:start', this.handleDirectUploadStart.bind(this))
+    this.element.addEventListener('direct-upload:progress', this.handleDirectUploadProgress.bind(this))
+    this.element.addEventListener('direct-upload:error', this.handleDirectUploadError.bind(this))
+    this.element.addEventListener('direct-upload:end', this.handleDirectUploadEnd.bind(this))
   }
 
   disconnect() {
@@ -333,7 +341,7 @@ export default class extends Controller {
     }
   }
 
-  // Handle form submission with improved progress tracking
+  // Handle form submission with modern best practices
   async handleSubmit(event) {
     event.preventDefault()
     
@@ -343,68 +351,103 @@ export default class extends Controller {
       return
     }
 
+    console.log(`Starting upload of ${this.selectedFiles.length} files`)
     this.isUploading = true
     this.showProgress()
 
+    // For direct uploads, we need to wait for Active Storage to complete
+    if (this.inputTarget.hasAttribute('data-direct-upload')) {
+      console.log('Using Active Storage direct uploads - waiting for completion')
+      this.updateProgress(0, this.selectedFiles.length, 'Starting direct upload...')
+      
+      // Don't submit immediately - wait for direct uploads to complete
+      // The handleDirectUploadEnd method will handle the final submission
+    } else {
+      // Fallback to traditional upload for development/testing
+      console.log('Using traditional upload')
+      await this.handleTraditionalUpload()
+    }
+  }
+
+  // Traditional upload method (fallback)
+  async handleTraditionalUpload() {
     try {
-      // Always use batch upload for better progress tracking
-      await this.uploadInBatches()
+      const formData = new FormData()
+      formData.append('authenticity_token', 
+        document.querySelector('[name="authenticity_token"]').value)
       
-      // Show completion message
-      this.updateProgress(this.selectedFiles.length, this.selectedFiles.length, 'Upload complete! Processing images...')
-      
-      // Redirect after a short delay to show completion
-      setTimeout(() => {
-        window.location.reload()
-      }, 1500)
+      this.selectedFiles.forEach(file => {
+        formData.append('images[]', file)
+      })
+
+      formData.append('format', 'json')
+      this.updateProgress(0, this.selectedFiles.length, 'Uploading files...')
+
+      const response = await fetch(this.formTarget.action, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const contentType = response.headers.get('content-type')
+        if (contentType && contentType.includes('application/json')) {
+          const result = await response.json()
+          console.log('Upload successful:', result)
+          
+          this.updateProgress(this.selectedFiles.length, this.selectedFiles.length, 'Upload complete! Processing...')
+          
+          setTimeout(() => {
+            window.location.href = result.redirect_url || '/kuralis/ai_product_analyses?tab=processing'
+          }, 1000)
+        } else {
+          const htmlContent = await response.text()
+          console.error('Expected JSON but got HTML:', htmlContent.substring(0, 200))
+          throw new Error('Server returned HTML instead of JSON. This usually means an authentication or routing issue.')
+        }
+      } else {
+        const contentType = response.headers.get('content-type')
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || `Upload failed: ${response.statusText}`)
+        } else {
+          const htmlContent = await response.text()
+          console.error('Error response HTML:', htmlContent.substring(0, 200))
+          throw new Error(`Upload failed: ${response.status} ${response.statusText}`)
+        }
+      }
     } catch (error) {
       console.error('Upload failed:', error)
-      alert('Upload failed. Please try again.')
+      this.showUploadError(error)
       this.hideProgress()
       this.isUploading = false
     }
   }
 
-  // Optimized batch upload with better progress tracking
-  async uploadInBatches() {
-    const batchSize = 10  // Smaller batches for better progress feedback
-    const totalBatches = Math.ceil(this.selectedFiles.length / batchSize)
-    let uploadedCount = 0
-
-    for (let i = 0; i < totalBatches; i++) {
-      const start = i * batchSize
-      const end = Math.min(start + batchSize, this.selectedFiles.length)
-      const batch = this.selectedFiles.slice(start, end)
-
-      this.updateProgress(uploadedCount, this.selectedFiles.length, 
-        `Uploading batch ${i + 1} of ${totalBatches}... (${batch.length} files)`)
-
-      const formData = new FormData()
-      formData.append('authenticity_token', 
-        document.querySelector('[name="authenticity_token"]').value)
-      
-      batch.forEach(file => {
-        formData.append('images[]', file)
-      })
-
-      const response = await fetch(this.formTarget.action, {
-        method: 'POST',
-        body: formData
-      })
-
-      if (!response.ok) {
-        throw new Error(`Batch ${i + 1} upload failed`)
-      }
-
-      uploadedCount += batch.length
-      this.updateProgress(uploadedCount, this.selectedFiles.length, 
-        `Uploaded ${uploadedCount} of ${this.selectedFiles.length} files`)
-
-      // Shorter delay between batches for faster overall upload
-      if (i < totalBatches - 1) {
-        await new Promise(resolve => setTimeout(resolve, 200))
-      }
+  // Show upload error with better messaging
+  showUploadError(error) {
+    let errorMessage = 'Upload failed. Please try again.'
+    
+    if (error.message.includes('413') || error.message.includes('too large')) {
+      errorMessage = 'Files are too large. Please reduce file sizes and try again.'
+    } else if (error.message.includes('timeout')) {
+      errorMessage = 'Upload timed out. Please try with fewer files or check your connection.'
+    } else if (error.message.includes('network')) {
+      errorMessage = 'Network error. Please check your connection and try again.'
     }
+    
+    // Show error in a more user-friendly way
+    const errorDiv = document.createElement('div')
+    errorDiv.className = 'alert alert-danger mt-3'
+    errorDiv.innerHTML = `
+      <strong>Upload Error:</strong> ${errorMessage}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `
+    
+    this.formTarget.appendChild(errorDiv)
   }
 
   // Show progress UI
@@ -447,5 +490,131 @@ export default class extends Controller {
     const sizes = ['Bytes', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  // Direct upload event handlers
+  handleDirectUploadInitialize(event) {
+    const { target, detail } = event
+    const { id, file } = detail
+    
+    console.log(`Initializing direct upload for ${file.name}`)
+    this.directUploads.set(id, {
+      file: file,
+      progress: 0,
+      status: 'initializing'
+    })
+    
+    this.showProgress()
+    this.updateProgress(0, this.selectedFiles.length, 'Starting direct upload...')
+  }
+
+  handleDirectUploadStart(event) {
+    const { id } = event.detail
+    const upload = this.directUploads.get(id)
+    
+    if (upload) {
+      upload.status = 'uploading'
+      console.log(`Direct upload started for ${upload.file.name}`)
+    }
+  }
+
+  handleDirectUploadProgress(event) {
+    const { id, progress } = event.detail
+    const upload = this.directUploads.get(id)
+    
+    if (upload) {
+      upload.progress = progress
+      
+      // Calculate overall progress
+      const totalProgress = Array.from(this.directUploads.values())
+        .reduce((sum, upload) => sum + upload.progress, 0) / this.directUploads.size
+      
+      this.updateProgress(
+        Math.floor(totalProgress / 100 * this.selectedFiles.length), 
+        this.selectedFiles.length, 
+        `Uploading directly to cloud storage... ${Math.round(totalProgress)}%`
+      )
+    }
+  }
+
+  handleDirectUploadError(event) {
+    const { id, error } = event.detail
+    const upload = this.directUploads.get(id)
+    
+    if (upload) {
+      upload.status = 'error'
+      console.error(`Direct upload failed for ${upload.file.name}:`, error)
+      
+      // Check if we should continue or abort
+      const errorCount = Array.from(this.directUploads.values())
+        .filter(upload => upload.status === 'error').length
+      
+      const completedCount = Array.from(this.directUploads.values())
+        .filter(upload => upload.status === 'complete').length
+      
+      if (errorCount === this.directUploads.size) {
+        // All uploads failed
+        this.showUploadError(new Error(`All direct uploads failed. Please try again or check your internet connection.`))
+        this.hideProgress()
+        this.isUploading = false
+      } else if (completedCount + errorCount === this.directUploads.size) {
+        // Some succeeded, some failed - let user decide
+        const message = `${errorCount} of ${this.directUploads.size} uploads failed. Continue with ${completedCount} successful uploads?`
+        if (confirm(message)) {
+          console.log('Continuing with partial uploads')
+          this.updateProgress(completedCount, this.selectedFiles.length, `Submitting ${completedCount} successful uploads...`)
+          setTimeout(() => {
+            this.formTarget.submit()
+          }, 500)
+        } else {
+          this.hideProgress()
+          this.isUploading = false
+        }
+      } else {
+        // Still have uploads in progress
+        this.updateProgress(
+          completedCount, 
+          this.selectedFiles.length, 
+          `Upload error occurred. ${completedCount}/${this.selectedFiles.length} complete, ${errorCount} failed`
+        )
+      }
+    }
+  }
+
+  handleDirectUploadEnd(event) {
+    const { id } = event.detail
+    const upload = this.directUploads.get(id)
+    
+    if (upload) {
+      upload.status = 'complete'
+      upload.progress = 100
+      console.log(`Direct upload completed for ${upload.file.name}`)
+      
+      // Check if all uploads are complete
+      const allComplete = Array.from(this.directUploads.values())
+        .every(upload => upload.status === 'complete' || upload.status === 'error')
+      
+      const completedCount = Array.from(this.directUploads.values())
+        .filter(upload => upload.status === 'complete').length
+      
+      console.log(`${completedCount}/${this.directUploads.size} uploads completed`)
+      
+      if (allComplete && this.directUploads.size === this.selectedFiles.length) {
+        console.log('All direct uploads completed - submitting form')
+        this.updateProgress(this.selectedFiles.length, this.selectedFiles.length, 'All uploads complete! Submitting...')
+        
+        // Now submit the form with the signed IDs
+        setTimeout(() => {
+          this.formTarget.submit()
+        }, 500) // Small delay to ensure all signed IDs are properly set
+      } else {
+        // Update progress for partial completion
+        this.updateProgress(
+          completedCount, 
+          this.selectedFiles.length, 
+          `Uploading to cloud storage... ${completedCount}/${this.selectedFiles.length} complete`
+        )
+      }
+    }
   }
 } 

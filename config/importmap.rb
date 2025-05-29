@@ -9,3 +9,4 @@ pin "@popperjs/core", to: "https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/di
 pin_all_from "app/javascript/controllers", under: "controllers"
 pin_all_from "app/javascript/lib", under: "lib"
 pin_all_from "app/javascript/components", under: "components"
+pin "@rails/activestorage", to: "@rails--activestorage.js" # @8.0.200

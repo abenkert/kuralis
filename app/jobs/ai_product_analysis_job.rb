@@ -4,86 +4,136 @@ class AiProductAnalysisJob < ApplicationJob
 
   queue_as :default
 
-  retry_on StandardError, attempts: 3, wait: 5.seconds
+  # Add retry logic for transient failures - use simpler retry strategy
+  retry_on StandardError, wait: 5.seconds, attempts: 3
+
+  # Don't retry on permanent failures
+  discard_on ActiveRecord::RecordNotFound
+  discard_on OpenAI::Error # If OpenAI API returns permanent error
 
   def perform(shop_id, analysis_id)
-    analysis = AiProductAnalysis.find_by(id: analysis_id)
+    Rails.logger.info "Starting AI analysis job for shop #{shop_id}, analysis #{analysis_id}"
 
-    # Exit early if analysis record not found
-    unless analysis
-      Rails.logger.error "Analysis record not found (ID: #{analysis_id})"
-      return
-    end
+    shop = Shop.find(shop_id)
+    analysis = shop.ai_product_analyses.find(analysis_id)
 
     # Update status to processing
-    analysis.mark_as_processing!
+    analysis.update!(status: "processing")
 
     # Broadcast status update
-    broadcast_update(analysis)
+    broadcast_analysis_update(shop, analysis)
 
-    begin
-      # Get the attached image
-      if analysis.image_attachment.attached?
-        # Process and compress image for faster analysis
-        processed_image_data = process_image_for_analysis(analysis.image_attachment)
+    # Perform the AI analysis
+    result = perform_ai_analysis(analysis)
 
-        # Get the filename
-        filename = analysis.image_attachment.filename.to_s
-
-        # Analyze the image with optimized settings
-        results = analyze_image(processed_image_data, filename, shop_id)
-
-        # Mark as completed with results and automatically create draft product
-        if results.key?(:error)
-          analysis.mark_as_failed!(results[:error])
-        else
-          analysis.mark_as_completed!(results)
-
-          # Automatically create draft product after successful analysis
-          create_draft_product_from_analysis(analysis)
-        end
-      else
-        # No image attached, mark as failed
-        analysis.mark_as_failed!("No image attached to analysis")
-      end
-
-      # Broadcast the update
-      broadcast_update(analysis)
-    rescue => e
-      Rails.logger.error "Error in AI analysis job: #{e.message}"
-      Rails.logger.error e.backtrace.join("\n")
-
-      # Mark as failed with error message
-      analysis.update(
-        status: "failed",
-        error_message: "Error analyzing image: #{e.message}"
+    if result[:success]
+      Rails.logger.info "AI analysis completed successfully for analysis #{analysis_id}"
+      analysis.update!(
+        status: "completed",
+        results: result[:data]
       )
 
-      # Broadcast the error status
-      broadcast_update(analysis)
+      # Auto-create draft product
+      create_draft_product(analysis)
+
+      # Broadcast completion
+      broadcast_analysis_update(shop, analysis)
+    else
+      Rails.logger.error "AI analysis failed for analysis #{analysis_id}: #{result[:error]}"
+      analysis.update!(
+        status: "failed",
+        error_message: result[:error]
+      )
+
+      # Broadcast failure
+      broadcast_analysis_update(shop, analysis)
     end
+
+  rescue => e
+    Rails.logger.error "Unexpected error in AI analysis job: #{e.message}"
+    Rails.logger.error e.backtrace.join("\n")
+
+    analysis&.update!(
+      status: "failed",
+      error_message: "Unexpected error: #{e.message}"
+    )
+
+    # Broadcast failure
+    broadcast_analysis_update(shop, analysis) if shop && analysis
+
+    raise # Re-raise to trigger retry logic
   end
 
   private
 
-  # Broadcast real-time updates to the UI
-  def broadcast_update(analysis)
-    # Broadcast to the specific analysis item
+  def broadcast_analysis_update(shop, analysis)
+    # Use Turbo Streams to update the UI in real-time
     Turbo::StreamsChannel.broadcast_replace_to(
-      "shop_#{analysis.shop_id}_analyses",
+      "shop_#{shop.id}_analyses",
       target: "analysis_#{analysis.id}",
       partial: "kuralis/ai_product_analyses/ai_analysis_item",
       locals: { analysis: analysis }
     )
-
-    # Also broadcast a general update to refresh counters
-    Turbo::StreamsChannel.broadcast_update_to(
-      "shop_#{analysis.shop_id}_analyses",
-      target: "analysis_counters",
-      html: ""  # This will trigger a page refresh of counters
-    )
   rescue => e
-    Rails.logger.warn "Failed to broadcast update: #{e.message}"
+    Rails.logger.warn "Failed to broadcast analysis update: #{e.message}"
+    # Don't fail the job if broadcasting fails
+  end
+
+  def create_draft_product(analysis)
+    # Auto-create draft product from analysis
+    draft_product = analysis.create_draft_product_from_analysis
+
+    if draft_product
+      Rails.logger.info "Auto-created draft product #{draft_product.id} from analysis #{analysis.id}"
+
+      # Note: Removed Turbo Stream broadcast since the partial doesn't exist
+      # The draft product is created successfully and will appear on page refresh
+      # or when the user navigates to the drafts tab
+    end
+  rescue => e
+    Rails.logger.error "Failed to create draft product from analysis #{analysis.id}: #{e.message}"
+    # Don't fail the job if draft creation fails
+  end
+
+  def perform_ai_analysis(analysis)
+    begin
+      # Get the attached image
+      unless analysis.image_attachment.attached?
+        return { success: false, error: "No image attached to analysis" }
+      end
+
+      # Check if the file actually exists in storage
+      unless analysis.image_attachment.blob.present?
+        return { success: false, error: "Image blob is missing" }
+      end
+
+      # Verify file exists in storage before processing
+      begin
+        analysis.image_attachment.blob.open { |file| file.read(1) }
+      rescue ActiveStorage::FileNotFoundError => e
+        Rails.logger.error "File not found in storage for analysis #{analysis.id}: #{e.message}"
+        return { success: false, error: "Image file not found in storage. The file may have been deleted." }
+      end
+
+      # Process and compress image for faster analysis
+      processed_image_data = process_image_for_analysis(analysis.image_attachment)
+
+      # Get the filename
+      filename = analysis.image_attachment.filename.to_s
+
+      # Analyze the image with optimized settings
+      results = analyze_image(processed_image_data, filename, analysis.shop_id)
+
+      # Check if analysis was successful
+      if results.key?(:error)
+        { success: false, error: results[:error] }
+      else
+        { success: true, data: results }
+      end
+    rescue => e
+      Rails.logger.error "Error in perform_ai_analysis: #{e.message}"
+      { success: false, error: "Failed to analyze image: #{e.message}" }
+    end
   end
 
   # Process and compress image for faster AI analysis
@@ -97,7 +147,8 @@ class AiProductAnalysisJob < ApplicationJob
       .source(StringIO.new(original_data))
       .resize_to_limit(1024, 1024)  # Smaller size for faster processing
       .convert("jpeg")              # Convert to JPEG for better compression
-      .call(quality: 85)            # Good quality but smaller file size
+      .saver(quality: 85)           # Fix: use saver instead of call with quality
+      .call
 
     processed_blob.read
   rescue => e
@@ -795,34 +846,6 @@ class AiProductAnalysisJob < ApplicationJob
     category&.category_id
   rescue => e
     Rails.logger.error "Error finding eBay category: #{e.message}"
-    nil
-  end
-
-  def create_draft_product_from_analysis(analysis)
-    # Check if a draft product already exists for this analysis
-    existing_draft = KuralisProduct.find_by(ai_product_analysis_id: analysis.id, is_draft: true)
-    if existing_draft.present?
-      Rails.logger.info "Draft product already exists for analysis #{analysis.id}"
-      return existing_draft
-    end
-
-    # Create the draft product using the existing method
-    shop = Shop.find(analysis.shop_id)
-    draft_product = KuralisProduct.create_from_ai_analysis(analysis, shop)
-
-    if draft_product.persisted?
-      Rails.logger.info "Successfully created draft product #{draft_product.id} from analysis #{analysis.id}"
-
-      # Broadcast update to include the new draft product
-      broadcast_draft_created(analysis, draft_product)
-    else
-      Rails.logger.error "Failed to create draft product from analysis #{analysis.id}: #{draft_product.errors.full_messages.join(', ')}"
-    end
-
-    draft_product
-  rescue => e
-    Rails.logger.error "Error creating draft product from analysis #{analysis.id}: #{e.message}"
-    Rails.logger.error e.backtrace.join("\n")
     nil
   end
 

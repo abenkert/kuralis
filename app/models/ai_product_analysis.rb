@@ -240,4 +240,29 @@ class AiProductAnalysis < ApplicationRecord
   def error_message
     @error_message || results&.dig("error")
   end
+
+  # Create a draft product from this analysis
+  def create_draft_product_from_analysis
+    # Check if a draft product already exists for this analysis
+    existing_draft = KuralisProduct.find_by(ai_product_analysis_id: id, is_draft: true)
+    if existing_draft.present?
+      Rails.logger.info "Draft product already exists for analysis #{id}"
+      return existing_draft
+    end
+
+    # Create the draft product using the existing method
+    draft_product = KuralisProduct.create_from_ai_analysis(self, shop)
+
+    if draft_product.persisted?
+      Rails.logger.info "Successfully created draft product #{draft_product.id} from analysis #{id}"
+    else
+      Rails.logger.error "Failed to create draft product from analysis #{id}: #{draft_product.errors.full_messages.join(', ')}"
+    end
+
+    draft_product
+  rescue => e
+    Rails.logger.error "Error creating draft product from analysis #{id}: #{e.message}"
+    Rails.logger.error e.backtrace.join("\n")
+    nil
+  end
 end

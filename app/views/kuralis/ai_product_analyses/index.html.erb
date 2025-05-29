@@ -30,6 +30,22 @@
     </div>
   <% end %>
 
+  <!-- Upload Progress Banner (shown when uploading) -->
+  <% if params[:uploading] == 'true' %>
+    <div class="alert alert-primary mb-4" id="upload-progress-banner">
+      <div class="d-flex align-items-center">
+        <div class="spinner-border spinner-border-sm text-primary me-3" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <div class="flex-grow-1">
+          <strong>Upload Complete - Processing Images</strong><br>
+          <small>Your images have been uploaded and AI analysis is starting. This page will update automatically as results come in.</small>
+        </div>
+        <button type="button" class="btn-close" onclick="this.parentElement.parentElement.style.display='none'"></button>
+      </div>
+    </div>
+  <% end %>
+
   <div class="row">
     <!-- Upload Section -->
     <div class="col-md-5">
@@ -58,7 +74,9 @@
                      accept="image/*" 
                      class="d-none"
                      data-ai-upload-target="input"
-                     data-action="change->ai-upload#handleFileSelect">
+                     data-action="change->ai-upload#handleFileSelect"
+                     data-direct-upload-url="<%= rails_direct_uploads_url %>"
+                     data-direct-upload="true">
               
               <!-- Dropzone Area -->
               <div class="dropzone-area p-5 text-center border rounded bg-light mb-4"
@@ -215,10 +233,19 @@
                     <div class="col-md-6 mb-4" id="draft_product_<%= product.id %>">
                       <div class="analysis-item position-relative">
                         <% if product.images.attached? %>
-                          <%= image_tag product.images.first.variant(resize_to_limit: [300, 200]), 
-                                        class: "analysis-image",
-                                        loading: "lazy",
-                                        style: "object-fit: cover; width: 100%; height: 150px;" %>
+                          <% begin %>
+                            <%= image_tag product.images.first.variant(resize_to_limit: [300, 200]), 
+                                          class: "analysis-image",
+                                          loading: "lazy",
+                                          style: "object-fit: cover; width: 100%; height: 150px;" %>
+                          <% rescue ActiveStorage::FileNotFoundError => e %>
+                            <div class="analysis-image bg-light d-flex align-items-center justify-content-center">
+                              <div class="text-center text-muted">
+                                <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                                <small>Image not found</small>
+                              </div>
+                            </div>
+                          <% end %>
                         <% else %>
                           <div class="analysis-image bg-light d-flex align-items-center justify-content-center">
                             <i class="fas fa-image fa-3x text-muted"></i>
@@ -442,6 +469,10 @@
       // Find and click the drafts tab button
       const draftsTab = document.getElementById('drafts-tab');
       if (draftsTab) draftsTab.click();
+    } else if (tab === 'processing') {
+      // Find and click the processing tab button
+      const processingTab = document.getElementById('analyses-tab');
+      if (processingTab) processingTab.click();
     } else {
       // If no processing analyses, default to drafts tab
       const processingCount = <%= (@pending_analyses.count + @processing_analyses.count) %>;
@@ -463,6 +494,10 @@
       // Find and click the drafts tab button
       const draftsTab = document.getElementById('drafts-tab');
       if (draftsTab) draftsTab.click();
+    } else if (tab === 'processing') {
+      // Find and click the processing tab button
+      const processingTab = document.getElementById('analyses-tab');
+      if (processingTab) processingTab.click();
     } else {
       // If no processing analyses, default to drafts tab
       const processingCount = <%= (@pending_analyses.count + @processing_analyses.count) %>;

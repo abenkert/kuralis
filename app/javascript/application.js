@@ -5,6 +5,43 @@ import * as Popper from "@popperjs/core"
 import * as bootstrap from "bootstrap"
 import "./components/ebay_category_selector"
 
+// Add Active Storage for direct uploads (modern Rails standard)
+import * as ActiveStorage from "@rails/activestorage"
+ActiveStorage.start()
+
+// Add direct upload event listeners for better UX
+document.addEventListener("direct-upload:initialize", event => {
+  const { target, detail } = event
+  const { id, file } = detail
+  console.log(`Starting direct upload of ${file.name}`)
+})
+
+document.addEventListener("direct-upload:start", event => {
+  const { id } = event.detail
+  console.log(`Direct upload ${id} started`)
+})
+
+document.addEventListener("direct-upload:progress", event => {
+  const { id, progress } = event.detail
+  console.log(`Direct upload ${id} progress: ${progress}%`)
+  
+  // Update progress bar if available
+  const progressElement = document.querySelector(`[data-direct-upload-id="${id}"]`)
+  if (progressElement) {
+    progressElement.style.width = `${progress}%`
+  }
+})
+
+document.addEventListener("direct-upload:error", event => {
+  const { id, error } = event.detail
+  console.error(`Direct upload ${id} failed:`, error)
+})
+
+document.addEventListener("direct-upload:end", event => {
+  const { id } = event.detail
+  console.log(`Direct upload ${id} completed`)
+})
+
 // Make Popper globally available for Bootstrap
 window.Popper = Popper
 

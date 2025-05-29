@@ -16,44 +16,48 @@ module Kuralis
     end
 
     def create
+      upload_start_time = Time.current
       Rails.logger.debug "Upload images params: #{params.inspect}"
 
-      # Extract debug info if available
-      if params[:debug_info].present?
-        begin
-          debug_info = JSON.parse(params[:debug_info])
-          Rails.logger.debug "Debug info from client: #{debug_info.inspect}"
-        rescue => e
-          Rails.logger.error "Error parsing debug info: #{e.message}"
-        end
-      end
-
-      # Check both the regular and fallback inputs
+      # Handle both direct uploads (signed_ids) and traditional uploads
       uploaded_files = []
+      signed_ids = []
 
-      # First try the standard 'images' parameter
-      if params[:images].present?
-        Rails.logger.debug "Found images parameter with type: #{params[:images].class}"
+      # Check for direct upload signed IDs (modern approach)
+      if params[:images].present? && params[:images].all? { |img| img.is_a?(String) }
+        Rails.logger.debug "Processing direct upload signed IDs"
+        signed_ids = params[:images]
 
-        if params[:images].is_a?(Array)
-          Rails.logger.debug "Images is an array with #{params[:images].length} items"
-          uploaded_files = params[:images]
-        elsif params[:images].is_a?(Hash) || params[:images].is_a?(ActionController::Parameters)
-          Rails.logger.debug "Images is a hash/params with #{params[:images].keys.length} keys"
-          uploaded_files = params[:images].values
-        elsif params[:images].is_a?(ActionDispatch::Http::UploadedFile)
-          Rails.logger.debug "Images is a single UploadedFile"
-          uploaded_files = [ params[:images] ]
-        else
-          Rails.logger.debug "Images is some other type (#{params[:images].class}), attempting to process"
+        # Convert signed IDs to blobs
+        uploaded_files = signed_ids.map do |signed_id|
           begin
-            uploaded_files = Array(params[:images])
+            ActiveStorage::Blob.find_signed(signed_id)
           rescue => e
-            Rails.logger.error "Failed to convert images to array: #{e.message}"
+            Rails.logger.error "Invalid signed ID #{signed_id}: #{e.message}"
+            nil
+          end
+        end.compact
+
+        Rails.logger.debug "Found #{uploaded_files.length} valid blobs from signed IDs"
+      else
+        # Traditional file upload handling (fallback)
+        Rails.logger.debug "Processing traditional file uploads"
+
+        if params[:images].present?
+          if params[:images].is_a?(Array)
+            uploaded_files = params[:images]
+          elsif params[:images].is_a?(Hash) || params[:images].is_a?(ActionController::Parameters)
+            uploaded_files = params[:images].values
+          elsif params[:images].is_a?(ActionDispatch::Http::UploadedFile)
+            uploaded_files = [ params[:images] ]
+          else
+            begin
+              uploaded_files = Array(params[:images])
+            rescue => e
+              Rails.logger.error "Failed to convert images to array: #{e.message}"
+            end
           end
         end
-      else
-        Rails.logger.warn "No images found in params"
       end
 
       Rails.logger.debug "Found #{uploaded_files.length} files to process"
@@ -97,29 +101,38 @@ module Kuralis
 
       # Prepare response message
       if successful_uploads > 0
+        upload_duration = Time.current - upload_start_time
+        Rails.logger.info "Upload completed: #{successful_uploads} files processed in #{upload_duration.round(2)}s (avg: #{(upload_duration / successful_uploads).round(3)}s per file)"
+
         message = "#{successful_uploads} #{'image'.pluralize(successful_uploads)} uploaded and queued for analysis."
         message += " #{failed_uploads} #{'upload'.pluralize(failed_uploads)} failed." if failed_uploads > 0
 
-        if is_bulk_upload
-          message += " Large uploads are processed in batches - check back in a few minutes for results."
-        end
-
         respond_to do |format|
-          format.html { redirect_to kuralis_ai_product_analyses_path, notice: message }
+          format.html {
+            if is_bulk_upload
+              redirect_to kuralis_ai_product_analyses_path(tab: "processing"),
+                          notice: message + " Large uploads are processed in batches - check back in a few minutes for results."
+            else
+              redirect_to kuralis_ai_product_analyses_path(tab: "processing"), notice: message
+            end
+          }
           format.json {
             render json: {
+              success: true,
               message: message,
               successful: successful_uploads,
               failed: failed_uploads,
               analysis_ids: analysis_ids,
-              is_bulk: is_bulk_upload
+              is_bulk: is_bulk_upload,
+              upload_duration: upload_duration.round(2),
+              redirect_url: kuralis_ai_product_analyses_path(tab: "processing")
             }
           }
         end
       else
         respond_to do |format|
           format.html { redirect_to kuralis_ai_product_analyses_path, alert: "No images were uploaded. Please try again." }
-          format.json { render json: { error: "No images were uploaded" }, status: :unprocessable_entity }
+          format.json { render json: { success: false, error: "No images were uploaded" }, status: :unprocessable_entity }
         end
       end
     end
@@ -158,55 +171,77 @@ module Kuralis
       failed = 0
       analysis_ids = []
 
-      files.each_with_index do |uploaded_file, index|
+      files.each_with_index do |file_or_blob, index|
         begin
-          unless uploaded_file.respond_to?(:original_filename) && uploaded_file.respond_to?(:read)
-            Rails.logger.warn "Item #{index} is not a valid file object: #{uploaded_file.class}"
-            failed += 1
-            next
+          # Handle both ActiveStorage::Blob (direct upload) and UploadedFile (traditional)
+          if file_or_blob.is_a?(ActiveStorage::Blob)
+            # Direct upload - blob is already stored
+            blob = file_or_blob
+            filename = blob.filename.to_s
+            content_type = blob.content_type
+            file_size = blob.byte_size
+
+            Rails.logger.debug "Processing direct upload blob #{index}: #{filename} (#{content_type}, #{file_size} bytes)"
+          else
+            # Traditional upload - need to validate
+            uploaded_file = file_or_blob
+
+            unless uploaded_file.respond_to?(:original_filename) && uploaded_file.respond_to?(:read)
+              Rails.logger.warn "Item #{index} is not a valid file object: #{uploaded_file.class}"
+              failed += 1
+              next
+            end
+
+            filename = uploaded_file.original_filename
+            content_type = uploaded_file.content_type
+            file_size = uploaded_file.size
+
+            Rails.logger.debug "Processing traditional upload #{index}: #{filename} (#{content_type}, #{file_size} bytes)"
           end
 
           # Validate file size (10MB limit)
           max_size = 10.megabytes
-          if uploaded_file.size > max_size
-            Rails.logger.warn "File #{uploaded_file.original_filename} is too large: #{uploaded_file.size} bytes"
+          if file_size > max_size
+            Rails.logger.warn "File #{filename} is too large: #{file_size} bytes"
             failed += 1
             next
           end
 
           # Validate file type
-          unless uploaded_file.content_type&.start_with?("image/")
-            Rails.logger.warn "File #{uploaded_file.original_filename} is not an image: #{uploaded_file.content_type}"
+          unless content_type&.start_with?("image/")
+            Rails.logger.warn "File #{filename} is not an image: #{content_type}"
             failed += 1
             next
           end
 
-          Rails.logger.debug "Processing file #{index}: #{uploaded_file.original_filename} (#{uploaded_file.content_type}, #{uploaded_file.size} bytes)"
-
+          # Create analysis record
           analysis = current_shop.ai_product_analyses.new(
             status: "pending",
-            image: uploaded_file.original_filename
+            image: filename
           )
 
-          analysis.image_attachment.attach(uploaded_file)
+          # Attach the file/blob
+          if file_or_blob.is_a?(ActiveStorage::Blob)
+            # For direct uploads, attach the existing blob
+            analysis.image_attachment.attach(blob)
+          else
+            # For traditional uploads, attach the uploaded file
+            analysis.image_attachment.attach(uploaded_file)
+          end
 
           if analysis.save
-            Rails.logger.debug "Successfully created analysis record for #{uploaded_file.original_filename}"
+            Rails.logger.debug "Successfully created analysis record for #{filename}"
             successful += 1
             analysis_ids << analysis.id
 
-            # Queue jobs immediately for faster processing
-            # For large batches, add small staggered delays to prevent overwhelming OpenAI API
+            # Queue jobs with smart delays
             if files.length > 50
-              # Stagger by 2 seconds per job to respect rate limits
               delay = (index * 2).seconds
               AiProductAnalysisJob.set(wait: delay).perform_later(current_shop.id, analysis.id)
             elsif files.length > 20
-              # Stagger by 1 second per job for medium batches
               delay = index.seconds
               AiProductAnalysisJob.set(wait: delay).perform_later(current_shop.id, analysis.id)
             else
-              # Process immediately for small batches
               AiProductAnalysisJob.perform_later(current_shop.id, analysis.id)
             end
           else
