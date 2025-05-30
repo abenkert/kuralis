@@ -52,11 +52,19 @@ class ImportEbayListingsJob < ApplicationJob
     # Update import timestamp
     ebay_account.update(last_listing_import_at: Time.current)
 
-    # Final status update
+    # Final status update with summary
+    Rails.logger.info("=== IMPORT SUMMARY ===")
+    Rails.logger.info("Expected total listings: #{@total_listings}")
+    Rails.logger.info("Actually processed: #{@processed_listings}")
+    if @total_listings > 0 && @processed_listings != @total_listings
+      Rails.logger.warn("DISCREPANCY: Missing #{@total_listings - @processed_listings} listings!")
+    end
+    Rails.logger.info("=== END SUMMARY ===")
+
     update_job_status(
       processed: @processed_listings,
       total: @total_listings,
-      message: "Import completed: #{@processed_listings} listings processed"
+      message: "Import completed: #{@processed_listings} listings processed (#{@total_listings} expected)"
     )
   rescue => e
     Rails.logger.error("Error in ImportEbayListingsJob: #{e.message}")
@@ -94,8 +102,15 @@ class ImportEbayListingsJob < ApplicationJob
         if response&.at_xpath("//ns:Ack", namespaces)&.text == "Success"
           items = response.xpath("//ns:Item", namespaces)
 
+          # Check if there are more pages first
+          total_pages = response.at_xpath("//ns:PaginationResult/ns:TotalNumberOfPages", namespaces)&.text.to_i || 0
+          total_entries = response.at_xpath("//ns:PaginationResult/ns:TotalNumberOfEntries", namespaces)&.text.to_i || 0
+
+          Rails.logger.info("Page #{page} of #{total_pages}: found #{items.size} items (total entries: #{total_entries})")
+
           # If no items found in this page, we're done with this time period
           if items.empty?
+            Rails.logger.info("No items found on page #{page}, ending pagination")
             has_more_pages = false
           else
             # Add to total listings count for progress tracking
@@ -119,12 +134,7 @@ class ImportEbayListingsJob < ApplicationJob
               )
             end
 
-            # Check if there are more pages
-            total_pages = response.at_xpath("//ns:PaginationResult/ns:TotalNumberOfPages", namespaces)&.text.to_i || 0
-            total_entries = response.at_xpath("//ns:PaginationResult/ns:TotalNumberOfEntries", namespaces)&.text.to_i || 0
-
-            Rails.logger.info("Processed page #{page} of #{total_pages} (#{items.size} listings, total entries: #{total_entries})")
-
+            # Update pagination
             has_more_pages = page < total_pages
             page += 1 if has_more_pages
           end
@@ -144,13 +154,17 @@ class ImportEbayListingsJob < ApplicationJob
 
   def process_items_batch(items, ebay_account)
     processed_ids = []
+    failed_ids = []
     namespaces = { "ns" => "urn:ebay:apis:eBLBaseComponents" }
 
     # Pre-fetch existing listings for this batch to reduce database queries
     ebay_item_ids = items.map { |item| item.at_xpath(".//ns:ItemID", namespaces).text }
     existing_listings = ebay_account.ebay_listings.where(ebay_item_id: ebay_item_ids).index_by(&:ebay_item_id)
 
+    Rails.logger.info("Processing batch of #{items.size} items (IDs: #{ebay_item_ids.first(3).join(', ')}#{ebay_item_ids.size > 3 ? '...' : ''})")
+
     items.each do |item|
+      ebay_item_id = nil
       begin
         ebay_item_id = item.at_xpath(".//ns:ItemID", namespaces).text
         processed_ids << ebay_item_id
@@ -163,7 +177,15 @@ class ImportEbayListingsJob < ApplicationJob
         description = prepare_description(item.at_xpath(".//ns:Description", namespaces)&.text)
         # TODO: We can save the ending reason if we want
         # ending_reason = item.at_xpath(".//ns:ListingDetails/ns:EndingReason", namespaces)&.text
-        location = find_location(description)
+
+        # Extract location with error handling to prevent import failures
+        location = nil
+        begin
+          location = find_location(description)
+        rescue => e
+          Rails.logger.warn("Failed to extract location for item #{ebay_item_id}: #{e.message}")
+          location = nil
+        end
 
         # Calculate available quantity (total quantity minus sold quantity)
         total_quantity = item.at_xpath(".//ns:Quantity", namespaces)&.text&.to_i || 0
@@ -220,8 +242,14 @@ class ImportEbayListingsJob < ApplicationJob
       rescue => e
         Rails.logger.error("Error processing item: #{e.message}")
         Rails.logger.error(e.backtrace.join("\n"))
+        failed_ids << ebay_item_id
       end
     end
+
+    # Log batch processing summary
+    success_count = processed_ids.size - failed_ids.size
+    Rails.logger.info("Batch summary: #{success_count}/#{items.size} items processed successfully" +
+                      (failed_ids.any? ? ", #{failed_ids.size} failed (IDs: #{failed_ids.join(', ')})" : ""))
 
     # Schedule image caching as a separate async job
     schedule_image_caching(ebay_account.id, processed_ids)
@@ -256,14 +284,48 @@ class ImportEbayListingsJob < ApplicationJob
   def find_location(description)
     return nil if description.blank?
 
-    doc = Nokogiri::HTML(description)
-    potential_code = doc.at_css("div font")&.text
-    if potential_code&.match?(/\A[OW]\d+.*\z/)
-      location_code = potential_code
-    else
-      location_code = nil
+    begin
+      # First, try to extract from HTML structure (existing logic)
+      doc = Nokogiri::HTML::DocumentFragment.parse(description) # Use fragment for better performance
+      potential_code = doc.at_css("div font")&.text
+      if potential_code&.match?(/\A[OW]\d+.*\z/i)
+        return potential_code.strip
+      end
+
+      # If HTML structure doesn't work, try extracting from raw text
+      # Pattern: starts with W or O, followed by alphanumeric characters, may include dashes
+      # Examples: W71E-1, O123A, W45B-2, etc.
+      clean_text = ActionView::Base.full_sanitizer.sanitize(description).strip
+
+      # Limit text length for performance
+      search_text = clean_text[0..200] # Increased from 100 to catch more cases
+
+      # Match pattern at the beginning of text: W or O + digit + alphanumeric + optional dash + more alphanumeric
+      match = search_text.match(/\A([OW]\d[A-Z0-9]*(?:-[A-Z0-9]+)*)/i)
+
+      if match
+        location_code = match[1].strip
+        # Only log occasionally to reduce log noise
+        Rails.logger.debug("Extracted location '#{location_code}'") if Rails.env.development?
+        return location_code
+      end
+
+      # Fallback: try to find the pattern anywhere in the search text
+      match = search_text.match(/([OW]\d[A-Z0-9]*(?:-[A-Z0-9]+)*)/i)
+
+      if match
+        location_code = match[1].strip
+        Rails.logger.debug("Found location '#{location_code}'") if Rails.env.development?
+        return location_code
+      end
+
+    rescue => e
+      # Don't let location extraction errors break the import
+      Rails.logger.warn("Error in location extraction: #{e.message}")
+      return nil
     end
-    location_code
+
+    nil
   end
 
   def extract_image_urls(item, namespaces)
