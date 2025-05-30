@@ -27,9 +27,9 @@ FactoryBot.define do
       after(:create) do |shop|
         create(:kuralis_shop_setting,
           shop: shop,
-          category: 'inventory',
-          key: 'sync_enabled',
-          value: { 'enabled' => true }
+          category: 'general',
+          key: 'inventory_sync',
+          value: true
         )
       end
     end

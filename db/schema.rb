@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_29_144249) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_30_192158) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -284,9 +284,13 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_29_144249) do
     t.datetime "last_synced_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "cancelled_at"
+    t.text "cancellation_reason"
+    t.index ["cancelled_at"], name: "index_orders_on_cancelled_at"
     t.index ["fulfillment_status"], name: "index_orders_on_fulfillment_status"
     t.index ["order_placed_at"], name: "index_orders_on_order_placed_at"
     t.index ["payment_status"], name: "index_orders_on_payment_status"
+    t.index ["platform", "cancelled_at"], name: "index_orders_on_platform_and_cancelled_at"
     t.index ["platform", "platform_order_id"], name: "index_orders_on_platform_and_platform_order_id", unique: true
     t.index ["platform_order_number"], name: "index_orders_on_platform_order_number"
     t.index ["shop_id"], name: "index_orders_on_shop_id"

@@ -211,6 +211,14 @@ class OrderProcessingService
       platform_sync_time = kuralis_product.ebay_listing.last_sync_at || kuralis_product.ebay_listing.created_at
       Rails.logger.debug "eBay order check: order_placed_at=#{@order.order_placed_at}, ebay_listing_last_sync_at=#{platform_sync_time}"
 
+      # Enhanced logic for cancelled orders
+      if @order.cancelled? && @order.cancelled_before?(platform_sync_time)
+        # Order was cancelled before our last inventory sync, so the current inventory
+        # already reflects the cancellation. Don't adjust.
+        Rails.logger.debug "Cancelled order #{@order.platform_order_id} was cancelled before last sync (#{@order.cancelled_at} <= #{platform_sync_time}) - skipping inventory adjustment"
+        return false
+      end
+
       @order.order_placed_at > platform_sync_time
 
     when "shopify"
@@ -219,6 +227,14 @@ class OrderProcessingService
 
       platform_sync_time = kuralis_product.shopify_product.last_synced_at || kuralis_product.shopify_product.created_at
       Rails.logger.debug "Shopify order check: order_placed_at=#{@order.order_placed_at}, shopify_product_last_synced_at=#{platform_sync_time}"
+
+      # Enhanced logic for cancelled orders
+      if @order.cancelled? && @order.cancelled_before?(platform_sync_time)
+        # Order was cancelled before our last inventory sync, so the current inventory
+        # already reflects the cancellation. Don't adjust.
+        Rails.logger.debug "Cancelled order #{@order.platform_order_id} was cancelled before last sync (#{@order.cancelled_at} <= #{platform_sync_time}) - skipping inventory adjustment"
+        return false
+      end
 
       @order.order_placed_at > platform_sync_time
 
@@ -280,21 +296,39 @@ class OrderProcessingService
     subtotal = BigDecimal(@order_data["pricingSummary"]["priceSubtotal"]["value"].to_s)
     total_price = BigDecimal(@order_data["pricingSummary"]["total"]["value"].to_s)
 
+    # Extract cancellation information
+    cancelled_at = nil
+    cancellation_reason = nil
+    if order_status == "cancelled"
+      cancelled_at = extract_cancellation_date
+      cancellation_reason = @order_data.dig("cancelStatus", "cancelReason") || "Order cancelled"
+    end
+
     @order.assign_attributes(
       subtotal: subtotal,
       total_price: total_price,
       shipping_cost: shipping_cost,
       fulfillment_status: order_status,
       payment_status: @order_data["orderPaymentStatus"],
-      paid_at: @order_data["paymentSummary"]["payments"]&.first&.dig("paymentDate"),
+      paid_at: @order_data.dig("paymentSummary", "payments", 0, "paymentDate"),
       shipping_address: extract_ebay_shipping_address,
       customer_name: extract_ebay_buyer_name,
       order_placed_at: @order_data["creationDate"],
+      cancelled_at: cancelled_at,
+      cancellation_reason: cancellation_reason,
       last_synced_at: Time.current
     )
   end
 
   def update_shopify_order_attributes
+    # Extract cancellation information
+    cancelled_at = nil
+    cancellation_reason = nil
+    if @order_data["cancelled"] == true
+      cancelled_at = @order_data["cancelledAt"]
+      cancellation_reason = @order_data["cancelReason"] || "Order cancelled"
+    end
+
     @order.assign_attributes(
       subtotal: @order_data["subtotalPriceSet"]["shopMoney"]["amount"].to_f,
       total_price: @order_data["totalPriceSet"]["shopMoney"]["amount"].to_f,
@@ -305,13 +339,15 @@ class OrderProcessingService
       shipping_address: nil, # Not available with current permissions
       customer_name: nil,    # Not available with current permissions
       order_placed_at: @order_data["createdAt"],
+      cancelled_at: cancelled_at,
+      cancellation_reason: cancellation_reason,
       last_synced_at: Time.current
     )
   end
 
   def determine_ebay_order_status
     order_status = @order_data["orderFulfillmentStatus"]
-    if order_status == "NOT_STARTED" && @order_data["cancelStatus"]["cancelState"] == "CANCELED"
+    if order_status == "NOT_STARTED" && @order_data.dig("cancelStatus", "cancelState") == "CANCELED"
       order_status = "cancelled"
     end
     order_status
@@ -328,12 +364,12 @@ class OrderProcessingService
 
     {
       name: address["fullName"],
-      street1: address["contactAddress"]["addressLine1"],
-      street2: address["contactAddress"]["addressLine2"],
-      city: address["contactAddress"]["city"],
-      state: address["contactAddress"]["stateOrProvince"],
-      postal_code: address["contactAddress"]["postalCode"],
-      country: address["contactAddress"]["countryCode"]
+      street1: address.dig("contactAddress", "addressLine1"),
+      street2: address.dig("contactAddress", "addressLine2"),
+      city: address.dig("contactAddress", "city"),
+      state: address.dig("contactAddress", "stateOrProvince"),
+      postal_code: address.dig("contactAddress", "postalCode"),
+      country: address.dig("contactAddress", "countryCode")
     }
   end
 
@@ -382,5 +418,21 @@ class OrderProcessingService
         error_class: error.class.name
       }
     )
+  end
+
+  def extract_cancellation_date
+    # Extract cancellation date from platform-specific order data
+    case @platform
+    when "ebay"
+      # eBay provides cancellation date in various places
+      @order_data.dig("cancelStatus", "cancelRequestDate") ||
+        @order_data.dig("cancelStatus", "cancelDate") ||
+        @order_data.dig("modificationDate") # Fallback to modification date
+    when "shopify"
+      # Shopify provides cancelled_at timestamp
+      @order_data["cancelledAt"]
+    else
+      nil
+    end
   end
 end

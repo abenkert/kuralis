@@ -31,7 +31,7 @@ FactoryBot.define do
     trait :with_ebay_listing do
       source_platform { "ebay" }
       after(:create) do |product|
-        account = product.shop.shopify_ebay_accounts.first || create(:shopify_ebay_account, shop: product.shop)
+        account = product.shop.shopify_ebay_account || create(:shopify_ebay_account, shop: product.shop)
         create(:ebay_listing, kuralis_product: product, shopify_ebay_account: account)
       end
     end
