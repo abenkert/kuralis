@@ -201,26 +201,26 @@ class OrderProcessingService
     return false unless @shop.inventory_sync?
     return false unless @order.order_placed_at.present?
 
-    # For products with platform associations, check when the platform listing was first imported
-    # This prevents double-counting sales that occurred before we started tracking the listing
+    # For products with platform associations, check when the platform listing was last synced
+    # This prevents double-counting sales that occurred before we got the current inventory state
     case kuralis_product.source_platform
     when "ebay"
-      # Use the eBay listing's created_at timestamp (when first imported from eBay)
+      # Use the eBay listing's last_sync_at timestamp (when we last got current inventory state)
       return false unless kuralis_product.ebay_listing.present?
 
-      platform_import_time = kuralis_product.ebay_listing.created_at
-      Rails.logger.debug "eBay order check: order_placed_at=#{@order.order_placed_at}, ebay_listing_created_at=#{platform_import_time}"
+      platform_sync_time = kuralis_product.ebay_listing.last_sync_at || kuralis_product.ebay_listing.created_at
+      Rails.logger.debug "eBay order check: order_placed_at=#{@order.order_placed_at}, ebay_listing_last_sync_at=#{platform_sync_time}"
 
-      @order.order_placed_at > platform_import_time
+      @order.order_placed_at > platform_sync_time
 
     when "shopify"
-      # Use the Shopify product's created_at timestamp (when first imported from Shopify)
+      # Use the Shopify product's last_synced_at timestamp (when we last got current inventory state)
       return false unless kuralis_product.shopify_product.present?
 
-      platform_import_time = kuralis_product.shopify_product.created_at
-      Rails.logger.debug "Shopify order check: order_placed_at=#{@order.order_placed_at}, shopify_product_created_at=#{platform_import_time}"
+      platform_sync_time = kuralis_product.shopify_product.last_synced_at || kuralis_product.shopify_product.created_at
+      Rails.logger.debug "Shopify order check: order_placed_at=#{@order.order_placed_at}, shopify_product_last_synced_at=#{platform_sync_time}"
 
-      @order.order_placed_at > platform_import_time
+      @order.order_placed_at > platform_sync_time
 
     else
       # For products created directly in Kuralis (AI, manual), use the product's imported_at
