@@ -9,15 +9,17 @@ module Ebay
 
     def perform(shop_id = nil)
       if shop_id
-        sync_shop(Shop.find(shop_id))
+        sync_shop_with_coordination(Shop.find(shop_id))
       else
         Shop.find_each do |shop|
           next unless shop.shopify_ebay_account # Skip shops without eBay connection
 
-
           # TODO: We definitely need to look into not just looping through the shops. This makes it delayed for certain shops.
           begin
-            sync_shop(shop)
+            sync_shop_with_coordination(shop)
+          rescue JobCoordinationService::JobConflictError => e
+            Rails.logger.warn "Skipping eBay order sync for shop #{shop.id} due to job conflict: #{e.message}"
+            # Don't fail the job, just skip this shop and continue
           rescue => e
             Rails.logger.error "Failed to sync eBay orders for shop #{shop.id}: #{e.message}"
             Rails.logger.error e.backtrace.join("\n")
@@ -27,6 +29,12 @@ module Ebay
     end
 
     private
+
+    def sync_shop_with_coordination(shop)
+      JobCoordinationService.with_job_coordination(shop.id, "order_sync", job_id) do
+        sync_shop(shop)
+      end
+    end
 
     def sync_shop(shop)
       @shop = shop
@@ -125,7 +133,12 @@ module Ebay
     end
 
     def process_orders(response)
-      response["orders"].each do |ebay_order|
+      return unless response["orders"]
+
+      # Sort orders by creation date to ensure chronological processing (#6)
+      sorted_orders = response["orders"].sort_by { |order| order["creationDate"] }
+
+      sorted_orders.each do |ebay_order|
         begin
           # Use the new enhanced order processing service with idempotency
           result = OrderProcessingService.process_order_with_idempotency(

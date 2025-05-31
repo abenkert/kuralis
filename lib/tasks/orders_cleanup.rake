@@ -135,41 +135,75 @@ namespace :orders do
     puts "✅ Successfully cleared #{cache_keys_cleared} cache entries"
   end
 
-  desc "Clear ALL order cache (pattern-based)"
-  task :clear_all_cache, [ :shop_domain ] => :environment do |t, args|
-    if args[:shop_domain].blank?
-      puts "Please specify a shop domain:"
-      puts "  rails orders:clear_all_cache[shop-name.myshopify.com]"
-      exit 1
-    end
-
-    shop = Shop.find_by(shopify_domain: args[:shop_domain])
-    unless shop
-      puts "Shop not found: #{args[:shop_domain]}"
-      exit 1
-    end
-
-    puts "🧹 Clearing ALL order cache using pattern matching..."
+  desc "Clear ALL cache (orders, inventory, locks, jobs)"
+  task clear_complete_cache: :environment do
+    puts "🧹 Clearing ALL system cache (orders, inventory, locks, job coordination)..."
 
     total_cleared = 0
 
-    # Clear all order-related cache using Redis pattern matching
+    # Clear all cache using Redis pattern matching
     if Rails.cache.respond_to?(:redis)
       Rails.cache.redis.with do |conn|
-        # Clear processed cache
-        processed_keys = conn.keys("order_processed:*")
-        if processed_keys.any?
-          conn.del(*processed_keys)
-          total_cleared += processed_keys.size
-          puts "   Cleared #{processed_keys.size} 'order_processed' cache entries"
+        # Order processing cache
+        order_processed_keys = conn.keys("order_processed:*")
+        if order_processed_keys.any?
+          conn.del(*order_processed_keys)
+          total_cleared += order_processed_keys.size
+          puts "   Cleared #{order_processed_keys.size} 'order_processed' cache entries"
         end
 
-        # Clear result cache
-        result_keys = conn.keys("order_result:*")
-        if result_keys.any?
-          conn.del(*result_keys)
-          total_cleared += result_keys.size
-          puts "   Cleared #{result_keys.size} 'order_result' cache entries"
+        order_result_keys = conn.keys("order_result:*")
+        if order_result_keys.any?
+          conn.del(*order_result_keys)
+          total_cleared += order_result_keys.size
+          puts "   Cleared #{order_result_keys.size} 'order_result' cache entries"
+        end
+
+        # Inventory processing cache
+        inventory_processed_keys = conn.keys("inventory_processed:*")
+        if inventory_processed_keys.any?
+          conn.del(*inventory_processed_keys)
+          total_cleared += inventory_processed_keys.size
+          puts "   Cleared #{inventory_processed_keys.size} 'inventory_processed' cache entries"
+        end
+
+        inventory_result_keys = conn.keys("inventory_result:*")
+        if inventory_result_keys.any?
+          conn.del(*inventory_result_keys)
+          total_cleared += inventory_result_keys.size
+          puts "   Cleared #{inventory_result_keys.size} 'inventory_result' cache entries"
+        end
+
+        # Inventory locks
+        inventory_lock_keys = conn.keys("inventory_lock:*")
+        if inventory_lock_keys.any?
+          conn.del(*inventory_lock_keys)
+          total_cleared += inventory_lock_keys.size
+          puts "   Cleared #{inventory_lock_keys.size} 'inventory_lock' entries"
+        end
+
+        # Job coordination locks
+        job_lock_keys = conn.keys("job_lock:*")
+        if job_lock_keys.any?
+          conn.del(*job_lock_keys)
+          total_cleared += job_lock_keys.size
+          puts "   Cleared #{job_lock_keys.size} 'job_lock' entries"
+        end
+
+        # Shopify bulk import cache
+        shopify_bulk_keys = conn.keys("shopify_bulk_import:*")
+        if shopify_bulk_keys.any?
+          conn.del(*shopify_bulk_keys)
+          total_cleared += shopify_bulk_keys.size
+          puts "   Cleared #{shopify_bulk_keys.size} 'shopify_bulk_import' cache entries"
+        end
+
+        # Order sync cache (older orders check)
+        order_sync_keys = conn.keys("*_older_orders_last_check:*")
+        if order_sync_keys.any?
+          conn.del(*order_sync_keys)
+          total_cleared += order_sync_keys.size
+          puts "   Cleared #{order_sync_keys.size} 'order_sync' cache entries"
         end
       end
     else
@@ -180,6 +214,52 @@ namespace :orders do
     end
 
     puts "✅ Successfully cleared #{total_cleared} total cache entries"
+  end
+
+  # Alias for backward compatibility
+  desc "Clear ALL order cache (pattern-based) - DEPRECATED: use clear_complete_cache"
+  task :clear_all_cache, [ :shop_domain ] => :environment do |t, args|
+    puts "⚠️  Note: clear_all_cache is deprecated. Use 'clear_complete_cache' for full cleanup."
+    puts "🔄 Redirecting to complete cache clear..."
+    Rake::Task["orders:clear_complete_cache"].invoke
+  end
+
+  desc "Clear inventory-specific cache"
+  task clear_inventory_cache: :environment do
+    puts "🧹 Clearing inventory-specific cache..."
+
+    total_cleared = 0
+
+    if Rails.cache.respond_to?(:redis)
+      Rails.cache.redis.with do |conn|
+        # Inventory processing cache
+        inventory_processed_keys = conn.keys("inventory_processed:*")
+        if inventory_processed_keys.any?
+          conn.del(*inventory_processed_keys)
+          total_cleared += inventory_processed_keys.size
+          puts "   Cleared #{inventory_processed_keys.size} 'inventory_processed' cache entries"
+        end
+
+        inventory_result_keys = conn.keys("inventory_result:*")
+        if inventory_result_keys.any?
+          conn.del(*inventory_result_keys)
+          total_cleared += inventory_result_keys.size
+          puts "   Cleared #{inventory_result_keys.size} 'inventory_result' cache entries"
+        end
+
+        # Inventory locks
+        inventory_lock_keys = conn.keys("inventory_lock:*")
+        if inventory_lock_keys.any?
+          conn.del(*inventory_lock_keys)
+          total_cleared += inventory_lock_keys.size
+          puts "   Cleared #{inventory_lock_keys.size} 'inventory_lock' entries"
+        end
+      end
+    else
+      puts "   Non-Redis cache store - use orders:clear_complete_cache instead"
+    end
+
+    puts "✅ Successfully cleared #{total_cleared} inventory cache entries"
   end
 
   desc "Show order cache status"
@@ -239,6 +319,78 @@ namespace :orders do
 
     puts "📈 Summary: #{cached_count}/#{orders.count} recent orders have cache entries"
     puts "📈 Total Redis cache keys: #{total_cache_keys}" if total_cache_keys > 0
+  end
+
+  desc "Show all cache key patterns and counts"
+  task inspect_cache: :environment do
+    puts "🔍 REDIS CACHE INSPECTION"
+    puts "=" * 50
+
+    if Rails.cache.respond_to?(:redis)
+      Rails.cache.redis.with do |conn|
+        patterns = [
+          "order_processed:*",
+          "order_result:*",
+          "inventory_processed:*",
+          "inventory_result:*",
+          "inventory_lock:*",
+          "job_lock:*",
+          "shopify_bulk_import:*",
+          "*_older_orders_last_check:*"
+        ]
+
+        total_keys = 0
+
+        patterns.each do |pattern|
+          keys = conn.keys(pattern)
+          count = keys.size
+          total_keys += count
+
+          puts "#{pattern.ljust(30)} #{count.to_s.rjust(8)} keys"
+
+          # Show a few examples if they exist
+          if count > 0 && count <= 5
+            keys.each { |key| puts "  └─ #{key}" }
+          elsif count > 5
+            keys.first(3).each { |key| puts "  ├─ #{key}" }
+            puts "  ├─ ... (#{count - 5} more)"
+            keys.last(2).each { |key| puts "  └─ #{key}" }
+          end
+          puts
+        end
+
+        puts "📊 SUMMARY: #{total_keys} total cache keys found"
+
+        # Check for any orphaned keys with non-existent shop IDs
+        puts "\n🔍 Checking for orphaned keys..."
+        valid_shop_ids = Shop.pluck(:id).to_set
+        orphaned_count = 0
+
+        patterns.each do |pattern|
+          keys = conn.keys(pattern)
+          keys.each do |key|
+            # Try to extract shop_id from key structure if possible
+            if key.match(/shop[_:](\d+)/) || key.match(/:(\d+):/)
+              shop_id = $1.to_i
+              unless valid_shop_ids.include?(shop_id)
+                orphaned_count += 1
+                puts "  ⚠️ Orphaned: #{key} (shop_id: #{shop_id})"
+              end
+            end
+          end
+        end
+
+        if orphaned_count > 0
+          puts "\n❌ Found #{orphaned_count} potentially orphaned keys"
+          puts "💡 Run 'rails orders:clear_complete_cache' to clean up"
+        else
+          puts "\n✅ No obviously orphaned keys found"
+        end
+      end
+    else
+      puts "❌ Redis not available or using different cache store"
+      puts "💡 Current cache store: #{Rails.cache.class}"
+    end
   end
 
   private

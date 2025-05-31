@@ -39,8 +39,26 @@ class CrossPlatformInventorySyncJob < ApplicationJob
       mark_transactions_processed
       Rails.logger.info "Successfully synced product_id=#{kuralis_product_id} across platforms"
     else
-      # Create notification for sync failures
-      create_sync_failure_notification(errors, sync_results)
+      # Use the new recovery service to handle partial failures
+      failed_platforms = []
+      successful_platforms = []
+
+      sync_results.each do |platform, result|
+        if result[:error]
+          failed_platforms << platform.to_s
+        else
+          successful_platforms << platform.to_s
+        end
+      end
+
+      # Handle the failure with the recovery service
+      PlatformSyncRecoveryService.handle_sync_failure(
+        @kuralis_product,
+        failed_platforms,
+        successful_platforms,
+        errors
+      )
+
       Rails.logger.error "Failed to sync product_id=#{kuralis_product_id}: #{errors.join(', ')}"
     end
 
@@ -142,11 +160,20 @@ class CrossPlatformInventorySyncJob < ApplicationJob
       # Therefore: total_quantity = quantity + quantity_sold
       new_total_quantity = @kuralis_product.base_quantity + ebay_listing.quantity_sold
 
+      # Determine eBay status based on both product status and inventory
+      ebay_status = if @kuralis_product.base_quantity <= 0
+        "completed"  # Out of stock
+      elsif @kuralis_product.status == "active"
+        "active"     # In stock and active
+      else
+        "completed"  # Inactive product
+      end
+
       ebay_listing.update!(
         quantity: @kuralis_product.base_quantity,
         total_quantity: new_total_quantity,
         sale_price: @kuralis_product.base_price,
-        ebay_status: @kuralis_product.status == "active" ? "active" : "completed"
+        ebay_status: ebay_status
       )
     end
   end

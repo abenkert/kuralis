@@ -14,13 +14,16 @@ module Shopify
 
     def perform(shop_id = nil)
       if shop_id
-        sync_shop(Shop.find(shop_id))
+        sync_shop_with_coordination(Shop.find(shop_id))
       else
         Shop.find_each do |shop|
           next unless shop.shopify_session # Skip shops without Shopify connection
 
           begin
-            sync_shop(shop)
+            sync_shop_with_coordination(shop)
+          rescue JobCoordinationService::JobConflictError => e
+            Rails.logger.warn "Skipping Shopify order sync for shop #{shop.id} due to job conflict: #{e.message}"
+            # Don't fail the job, just skip this shop and continue
           rescue => e
             Rails.logger.error "Failed to sync Shopify orders for shop #{shop.id}: #{e.message}"
             Rails.logger.error e.backtrace.join("\n")
@@ -30,6 +33,12 @@ module Shopify
     end
 
     private
+
+    def sync_shop_with_coordination(shop)
+      JobCoordinationService.with_job_coordination(shop.id, "order_sync", job_id) do
+        sync_shop(shop)
+      end
+    end
 
     def sync_shop(shop)
       @shop = shop
@@ -81,9 +90,14 @@ module Shopify
     end
 
     def process_orders(orders)
+      return if orders.empty?
+
+      # Sort orders by creation date to ensure chronological processing (#6)
+      sorted_orders = orders.sort_by { |order| order["createdAt"] }
+
       active_order_ids = []
 
-      orders.each do |order_data|
+      sorted_orders.each do |order_data|
         begin
           # Use the new enhanced order processing service with idempotency
           result = OrderProcessingService.process_order_with_idempotency(

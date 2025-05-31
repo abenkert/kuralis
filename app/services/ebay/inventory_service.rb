@@ -13,7 +13,12 @@ module Ebay
       if @product.base_quantity <= 0 || @product.status != "active"
         end_listing
       else
-        update_listing
+        # Check if listing was previously out of stock and needs reactivation
+        if @ebay_listing.ebay_status == "completed" && @product.base_quantity > 0
+          reactivate_listing
+        else
+          update_listing
+        end
       end
     end
 
@@ -47,7 +52,45 @@ module Ebay
       end_service.end_listing("NotAvailable")
     end
 
+    def reactivate_listing
+      result = make_api_call("ReviseFixedPriceItem", build_reactivate_request)
+
+      if result[:success]
+        Rails.logger.info "Successfully reactivated eBay listing #{@ebay_listing.ebay_item_id}"
+
+        # Calculate the new total_quantity to maintain the validation constraint
+        # quantity = total_quantity - quantity_sold
+        # Therefore: total_quantity = quantity + quantity_sold
+        new_total_quantity = @product.base_quantity + @ebay_listing.quantity_sold
+
+        @ebay_listing.update(
+          quantity: @product.base_quantity,
+          total_quantity: new_total_quantity,
+          ebay_status: "active"
+        )
+        true
+      else
+        Rails.logger.error "Failed to reactivate eBay listing: #{result[:error]}"
+        false
+      end
+    end
+
     def build_revise_request
+      <<~XML
+        <?xml version="1.0" encoding="utf-8"?>
+        <ReviseFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+          <RequesterCredentials>
+            <eBayAuthToken>#{@token_service.fetch_or_refresh_access_token}</eBayAuthToken>
+          </RequesterCredentials>
+          <Item>
+            <ItemID>#{@ebay_listing.ebay_item_id}</ItemID>
+            <Quantity>#{@product.base_quantity}</Quantity>
+          </Item>
+        </ReviseFixedPriceItemRequest>
+      XML
+    end
+
+    def build_reactivate_request
       <<~XML
         <?xml version="1.0" encoding="utf-8"?>
         <ReviseFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">

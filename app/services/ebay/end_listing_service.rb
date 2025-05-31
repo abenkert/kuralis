@@ -8,12 +8,26 @@ module Ebay
       @token_service = EbayTokenService.new(@shop)
     end
 
-    def end_listing(reason = "NotAvailable")
+    def end_listing(reason = "NotAvailable", preserve_listing: true)
       result = make_api_call("EndFixedPriceItem", build_end_request(reason))
 
       if result[:success]
         Rails.logger.info "Successfully ended eBay listing #{@ebay_listing.ebay_item_id}"
-        @ebay_listing.destroy!
+
+        if preserve_listing
+            # Mark as completed instead of destroying (preserves valuable listing data)
+            @ebay_listing.update!(
+              quantity: 0,
+              ebay_status: "completed",
+              end_time: Time.current
+          )
+          Rails.logger.info "eBay listing #{@ebay_listing.ebay_item_id} marked as completed (preserved)"
+        else
+          # Legacy behavior: actually destroy the listing record
+          @ebay_listing.destroy!
+          Rails.logger.info "eBay listing #{@ebay_listing.ebay_item_id} destroyed"
+        end
+
         true
       else
         Rails.logger.error "Failed to end eBay listing: #{result[:error]}"

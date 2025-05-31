@@ -17,6 +17,21 @@ class ImportEbayListingsJob < ApplicationJob
     ebay_account = shop.shopify_ebay_account
     return unless ebay_account
 
+    # Use job coordination to prevent conflicts with order syncing
+    JobCoordinationService.with_job_coordination(shop.id, "inventory_import", job_id) do
+      perform_import(shop, ebay_account, last_sync_time)
+    end
+  rescue JobCoordinationService::JobConflictError => e
+    Rails.logger.warn "Cannot start eBay listings import for shop #{shop.id}: #{e.message}"
+    update_job_status(message: "Import delayed due to order sync in progress. Will retry shortly.")
+
+    # Reschedule the job to try again in a few minutes
+    ImportEbayListingsJob.set(wait: 5.minutes).perform_later(shop_id, last_sync_time)
+  end
+
+  private
+
+  def perform_import(shop, ebay_account, last_sync_time)
     # Update job status with initial info
     update_job_status(total: @total_listings, processed: @processed_listings, message: "Starting import...")
 
@@ -66,13 +81,7 @@ class ImportEbayListingsJob < ApplicationJob
       total: @total_listings,
       message: "Import completed: #{@processed_listings} listings processed (#{@total_listings} expected)"
     )
-  rescue => e
-    Rails.logger.error("Error in ImportEbayListingsJob: #{e.message}")
-    Rails.logger.error(e.backtrace.join("\n"))
-    update_job_status(message: "Error: #{e.message}")
   end
-
-  private
 
   def update_job_status(total: nil, processed: nil, message: nil)
     return unless @job_run

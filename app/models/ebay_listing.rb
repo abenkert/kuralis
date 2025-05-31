@@ -46,6 +46,13 @@ class EbayListing < ApplicationRecord
     ebay_status == "active"
   end
 
+  def completed?
+    ebay_status == "completed"
+  end
+
+  def out_of_stock?
+    quantity <= 0
+  end
   def on_sale?
     original_price.present? && sale_price < original_price
   end
@@ -209,10 +216,6 @@ class EbayListing < ApplicationRecord
 
   def has_sales?
     quantity_sold > 0
-  end
-
-  def out_of_stock?
-    quantity.zero?
   end
 
   def low_stock?(threshold = 5)

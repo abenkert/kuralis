@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_30_192158) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_30_192200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -297,6 +297,28 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_30_192158) do
     t.index ["status"], name: "index_orders_on_status"
   end
 
+  create_table "platform_sync_failures", force: :cascade do |t|
+    t.bigint "kuralis_product_id", null: false
+    t.bigint "shop_id", null: false
+    t.json "failed_platforms", null: false
+    t.json "successful_platforms", null: false
+    t.json "error_details"
+    t.string "failure_type", null: false
+    t.integer "retry_count", default: 0
+    t.string "status", default: "pending"
+    t.datetime "escalated_at", precision: nil
+    t.datetime "resolved_at", precision: nil
+    t.datetime "abandoned_at", precision: nil
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_at"], name: "index_platform_sync_failures_on_created_at"
+    t.index ["kuralis_product_id", "created_at"], name: "idx_on_kuralis_product_id_created_at_6cf674fc1e"
+    t.index ["kuralis_product_id"], name: "index_platform_sync_failures_on_kuralis_product_id"
+    t.index ["shop_id", "status"], name: "index_platform_sync_failures_on_shop_id_and_status"
+    t.index ["shop_id"], name: "index_platform_sync_failures_on_shop_id"
+    t.index ["status", "retry_count"], name: "index_platform_sync_failures_on_status_and_retry_count"
+  end
+
   create_table "shopify_ebay_accounts", force: :cascade do |t|
     t.bigint "shop_id", null: false
     t.string "access_token"
@@ -409,6 +431,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_30_192158) do
   add_foreign_key "order_items", "kuralis_products"
   add_foreign_key "order_items", "orders"
   add_foreign_key "orders", "shops"
+  add_foreign_key "platform_sync_failures", "kuralis_products"
+  add_foreign_key "platform_sync_failures", "shops"
   add_foreign_key "shopify_ebay_accounts", "shops"
   add_foreign_key "shopify_products", "shops"
   add_foreign_key "users", "shops"
