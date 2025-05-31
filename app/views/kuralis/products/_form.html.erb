@@ -447,7 +447,72 @@
     <% end %>
     
     <%= link_to "Cancel", cancel_url, class: "btn btn-outline-secondary" %>
-    <%= form.submit submit_text, class: "btn btn-primary" %>
+    
+    <% if product.draft? && params[:finalize] == 'true' %>
+      <!-- Platform Selection for Finalize & List -->
+      <div class="btn-group" role="group">
+        <%= form.submit submit_text, class: "btn btn-primary" %>
+        
+        <div class="btn-group" role="group">
+          <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            Finalize & List
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-3" style="min-width: 250px;" data-controller="platform-selection">
+            <h6 class="dropdown-header">Select Platforms to List On:</h6>
+            
+            <!-- Shopify Platform -->
+            <div class="form-check">
+              <%= check_box_tag 'platforms[]', 'shopify', true, { 
+                id: 'platform_shopify', 
+                class: 'form-check-input',
+                data: { action: 'change->platform-selection#updateButton' },
+                disabled: !product.eligible_for_shopify?
+              } %>
+              <%= label_tag 'platform_shopify', 'Shopify', class: 'form-check-label' %>
+              <% unless product.eligible_for_shopify? %>
+                <% if product.listed_on_shopify? %>
+                  <small class="text-muted d-block">Already listed on Shopify</small>
+                <% else %>
+                  <small class="text-warning d-block">Missing: title or images</small>
+                <% end %>
+              <% end %>
+            </div>
+            
+            <!-- eBay Platform -->
+            <div class="form-check">
+              <%= check_box_tag 'platforms[]', 'ebay', true, { 
+                id: 'platform_ebay', 
+                class: 'form-check-input',
+                data: { action: 'change->platform-selection#updateButton' },
+                disabled: !product.eligible_for_ebay?
+              } %>
+              <%= label_tag 'platform_ebay', 'eBay', class: 'form-check-label' %>
+              <% unless product.eligible_for_ebay? %>
+                <% if product.listed_on_ebay? %>
+                  <small class="text-muted d-block">Already listed on eBay</small>
+                <% elsif !product.has_ebay_attributes? %>
+                  <small class="text-warning d-block">Missing: eBay attributes in tab above</small>
+                <% else %>
+                  <small class="text-warning d-block">Missing: title or images</small>
+                <% end %>
+              <% end %>
+            </div>
+            
+            <hr class="dropdown-divider">
+            <button type="submit" 
+                    name="finalize_and_list" 
+                    value="true" 
+                    class="btn btn-success btn-sm w-100"
+                    data-platform-selection-target="submitButton">
+              <i class="bi bi-rocket-takeoff me-1"></i>
+              Finalize & List on All Platforms
+            </button>
+          </div>
+        </div>
+      </div>
+    <% else %>
+      <%= form.submit submit_text, class: "btn btn-primary" %>
+    <% end %>
   </div>
 <% end %>
 

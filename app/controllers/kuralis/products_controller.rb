@@ -177,6 +177,40 @@ module Kuralis
         @product.is_draft = false
 
         if @product.save
+          # Check if user wants to finalize and list on platforms
+          if params[:finalize_and_list] == "true"
+            selected_platforms = params[:platforms] || []
+
+            if selected_platforms.any?
+              # Use the ListingService to create listings on selected platforms
+              listing_service = ListingService.new(
+                shop: current_shop,
+                product: @product,
+                platforms: selected_platforms
+              )
+
+              listing_results = listing_service.create_listings
+
+              # Generate feedback message based on results
+              successful_platforms = listing_results.select { |_, result| result[:success] }.keys
+              failed_platforms = listing_results.select { |_, result| !result[:success] }.keys
+
+              if successful_platforms.any? && failed_platforms.empty?
+                success_message = "Product finalized and successfully listed on #{successful_platforms.join(' and ')}."
+              elsif successful_platforms.any? && failed_platforms.any?
+                success_message = "Product finalized and listed on #{successful_platforms.join(' and ')}. Failed to list on #{failed_platforms.join(' and ')} - check notifications for details."
+              elsif failed_platforms.any?
+                success_message = "Product finalized but failed to list on #{failed_platforms.join(' and ')} - check notifications for details."
+              else
+                success_message = "Product finalized successfully."
+              end
+            else
+              success_message = "Product finalized successfully."
+            end
+          else
+            success_message = "Product finalized successfully."
+          end
+
           # Check if this is part of a finalization sequence
           if params[:sequence] == "true" && session[:draft_finalize_remaining].present?
             # Decrement remaining count
@@ -187,7 +221,7 @@ module Kuralis
               next_draft = current_shop.kuralis_products.draft.order(created_at: :asc).first
               if next_draft
                 redirect_to edit_kuralis_product_path(next_draft, finalize: true, sequence: true),
-                             notice: "Product was successfully finalized. Moving to next draft product."
+                             notice: success_message + " Moving to next draft product."
                 return
               end
             end
@@ -198,7 +232,7 @@ module Kuralis
             session[:draft_finalize_remaining] = nil
             redirect_to kuralis_products_path, notice: "Successfully finalized #{total} draft products!"
           else
-            redirect_to kuralis_products_path, notice: "Draft product was successfully finalized."
+            redirect_to kuralis_products_path, notice: success_message
           end
         else
           render :edit, status: :unprocessable_entity

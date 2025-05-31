@@ -103,11 +103,41 @@ module Kuralis
         begin
           @current_draft.finalize!
 
+          # Check if user wants to finalize and list on platforms
+          success_message = "Product '#{@current_draft.title}' finalized successfully!"
+
+          if params[:finalize_and_list] == "true"
+            selected_platforms = params[:platforms] || []
+
+            if selected_platforms.any?
+              # Use the ListingService to create listings on selected platforms
+              listing_service = ListingService.new(
+                shop: current_shop,
+                product: @current_draft,
+                platforms: selected_platforms
+              )
+
+              listing_results = listing_service.create_listings
+
+              # Generate feedback message based on results
+              successful_platforms = listing_results.select { |_, result| result[:success] }.keys
+              failed_platforms = listing_results.select { |_, result| !result[:success] }.keys
+
+              if successful_platforms.any? && failed_platforms.empty?
+                success_message = "Product '#{@current_draft.title}' finalized and successfully listed on #{successful_platforms.join(' and ')}!"
+              elsif successful_platforms.any? && failed_platforms.any?
+                success_message = "Product '#{@current_draft.title}' finalized and listed on #{successful_platforms.join(' and ')}. Failed to list on #{failed_platforms.join(' and ')} - check notifications for details."
+              elsif failed_platforms.any?
+                success_message = "Product '#{@current_draft.title}' finalized but failed to list on #{failed_platforms.join(' and ')} - check notifications for details."
+              end
+            end
+          end
+
           # Mark as completed in session
           @sequential_session["completed_count"] += 1
           advance_to_next_draft
 
-          flash[:success] = "Product '#{@current_draft.title}' finalized successfully!"
+          flash[:success] = success_message
 
           # Check if there are more drafts
           if get_current_draft
