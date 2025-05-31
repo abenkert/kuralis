@@ -438,6 +438,71 @@
   </div>
 
   <!-- Action Buttons -->
+  <% is_finalization = product.draft? && (params[:finalize] == 'true' || form_url.to_s.include?('sequential_update')) %>
+  
+  <% if is_finalization %>
+    <!-- Platform Selection for Fast Finalization -->
+    <div class="mb-3" data-controller="platform-selection">
+      <div class="row align-items-center">
+        <div class="col-md-6">
+          <h6 class="mb-2 text-muted">List on platforms after finalization:</h6>
+          <div class="d-flex gap-4">
+            <!-- Shopify Platform -->
+            <div class="form-check platform-option">
+              <%= check_box_tag 'platforms[]', 'shopify', true, { 
+                id: 'platform_shopify', 
+                class: 'form-check-input',
+                data: { action: 'change->platform-selection#updateButton' },
+                disabled: !product.eligible_for_shopify?,
+                tabindex: 1
+              } %>
+              <%= label_tag 'platform_shopify', class: 'form-check-label fw-medium' do %>
+                <i class="bi bi-shop me-1"></i>Shopify
+              <% end %>
+              <% unless product.eligible_for_shopify? %>
+                <% if product.listed_on_shopify? %>
+                  <small class="text-muted d-block">✓ Already listed</small>
+                <% else %>
+                  <small class="text-warning d-block">⚠ Missing requirements</small>
+                <% end %>
+              <% end %>
+            </div>
+            
+            <!-- eBay Platform -->
+            <div class="form-check platform-option">
+              <%= check_box_tag 'platforms[]', 'ebay', true, { 
+                id: 'platform_ebay', 
+                class: 'form-check-input',
+                data: { action: 'change->platform-selection#updateButton' },
+                disabled: !product.eligible_for_ebay?,
+                tabindex: 2
+              } %>
+              <%= label_tag 'platform_ebay', class: 'form-check-label fw-medium' do %>
+                <i class="bi bi-tags me-1"></i>eBay
+              <% end %>
+              <% unless product.eligible_for_ebay? %>
+                <% if product.listed_on_ebay? %>
+                  <small class="text-muted d-block">✓ Already listed</small>
+                <% elsif !product.has_ebay_attributes? %>
+                  <small class="text-warning d-block">⚠ Complete eBay tab first</small>
+                <% else %>
+                  <small class="text-warning d-block">⚠ Missing requirements</small>
+                <% end %>
+              <% end %>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-md-6 text-end">
+          <% if form_url.to_s.include?('sequential_update') %>
+            <small class="text-success d-block mb-1">🔄 Sequential Mode Active</small>
+          <% end %>
+          <small class="text-muted d-block mb-2">💡 Tab + Space to toggle • Enter to submit</small>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
   <div class="d-flex justify-content-end gap-2 mb-4">
     <% if local_assigns[:show_skip_button] %>
       <%= button_to "Skip", 
@@ -448,68 +513,17 @@
     
     <%= link_to "Cancel", cancel_url, class: "btn btn-outline-secondary" %>
     
-    <% if product.draft? && params[:finalize] == 'true' %>
-      <!-- Platform Selection for Finalize & List -->
-      <div class="btn-group" role="group">
-        <%= form.submit submit_text, class: "btn btn-primary" %>
-        
-        <div class="btn-group" role="group">
-          <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-            Finalize & List
-          </button>
-          <div class="dropdown-menu dropdown-menu-end p-3" style="min-width: 250px;" data-controller="platform-selection">
-            <h6 class="dropdown-header">Select Platforms to List On:</h6>
-            
-            <!-- Shopify Platform -->
-            <div class="form-check">
-              <%= check_box_tag 'platforms[]', 'shopify', true, { 
-                id: 'platform_shopify', 
-                class: 'form-check-input',
-                data: { action: 'change->platform-selection#updateButton' },
-                disabled: !product.eligible_for_shopify?
-              } %>
-              <%= label_tag 'platform_shopify', 'Shopify', class: 'form-check-label' %>
-              <% unless product.eligible_for_shopify? %>
-                <% if product.listed_on_shopify? %>
-                  <small class="text-muted d-block">Already listed on Shopify</small>
-                <% else %>
-                  <small class="text-warning d-block">Missing: title or images</small>
-                <% end %>
-              <% end %>
-            </div>
-            
-            <!-- eBay Platform -->
-            <div class="form-check">
-              <%= check_box_tag 'platforms[]', 'ebay', true, { 
-                id: 'platform_ebay', 
-                class: 'form-check-input',
-                data: { action: 'change->platform-selection#updateButton' },
-                disabled: !product.eligible_for_ebay?
-              } %>
-              <%= label_tag 'platform_ebay', 'eBay', class: 'form-check-label' %>
-              <% unless product.eligible_for_ebay? %>
-                <% if product.listed_on_ebay? %>
-                  <small class="text-muted d-block">Already listed on eBay</small>
-                <% elsif !product.has_ebay_attributes? %>
-                  <small class="text-warning d-block">Missing: eBay attributes in tab above</small>
-                <% else %>
-                  <small class="text-warning d-block">Missing: title or images</small>
-                <% end %>
-              <% end %>
-            </div>
-            
-            <hr class="dropdown-divider">
-            <button type="submit" 
-                    name="finalize_and_list" 
-                    value="true" 
-                    class="btn btn-success btn-sm w-100"
-                    data-platform-selection-target="submitButton">
-              <i class="bi bi-rocket-takeoff me-1"></i>
-              Finalize & List on All Platforms
-            </button>
-          </div>
-        </div>
-      </div>
+    <% if is_finalization %>
+      <!-- Smart Finalize Button -->
+      <%= form.submit submit_text, class: "btn btn-primary" %>
+      <button type="submit" 
+              name="finalize_and_list" 
+              value="true" 
+              class="btn btn-success"
+              data-platform-selection-target="submitButton">
+        <i class="bi bi-rocket-takeoff me-1"></i>
+        Finalize & List
+      </button>
     <% else %>
       <%= form.submit submit_text, class: "btn btn-primary" %>
     <% end %>
@@ -835,5 +849,37 @@ function isTagExists(tag) {
   .required-field-indicator {
     color: #e74a3b;
     margin-left: 3px;
+  }
+
+  /* Platform Selection Styles */
+  .platform-option {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    transition: all 0.2s ease;
+    background: #f8f9fa;
+  }
+
+  .platform-option:hover {
+    background: #e9ecef;
+    border-color: #dee2e6;
+  }
+
+  .platform-option input[type="checkbox"]:checked + label {
+    color: #198754;
+    font-weight: 600;
+  }
+
+  .platform-option input[type="checkbox"]:checked {
+    background-color: #198754;
+    border-color: #198754;
+  }
+
+  .platform-option input[type="checkbox"]:disabled + label {
+    opacity: 0.6;
+  }
+
+  .platform-option input[type="checkbox"]:focus {
+    box-shadow: 0 0 0 0.25rem rgba(25, 135, 84, 0.25);
   }
 </style> 

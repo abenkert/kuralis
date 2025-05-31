@@ -5,6 +5,22 @@ export default class extends Controller {
 
   connect() {
     this.updateButton()
+    this.setupKeyboardShortcuts()
+  }
+
+  setupKeyboardShortcuts() {
+    // Allow Enter key to submit the finalize & list button when focused
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        const activeElement = document.activeElement
+        
+        // If user is focused on a platform checkbox, submit the finalize & list button
+        if (activeElement && (activeElement.id === 'platform_shopify' || activeElement.id === 'platform_ebay')) {
+          event.preventDefault()
+          this.submitButtonTarget.click()
+        }
+      }
+    })
   }
 
   updateButton() {
@@ -14,29 +30,34 @@ export default class extends Controller {
     const shopifyChecked = shopifyCheckbox?.checked && !shopifyCheckbox?.disabled
     const ebayChecked = ebayCheckbox?.checked && !ebayCheckbox?.disabled
     
-    let buttonText = "Finalize & List on "
-    let platforms = []
+    // Detect if we're in sequential mode
+    const isSequential = window.location.pathname.includes('sequential')
+    const baseText = isSequential ? "Finalize & List" : "Finalize & List"
+    const nextText = isSequential ? " & Next" : ""
     
-    if (shopifyChecked) platforms.push("Shopify")
-    if (ebayChecked) platforms.push("eBay")
+    let buttonText = ""
+    let buttonClass = "btn btn-success"
     
-    if (platforms.length === 0) {
-      buttonText = "Finalize Only"
-      this.submitButtonTarget.classList.remove('btn-success')
-      this.submitButtonTarget.classList.add('btn-secondary')
-    } else if (platforms.length === 1) {
-      buttonText += platforms[0]
-      this.submitButtonTarget.classList.remove('btn-secondary')
-      this.submitButtonTarget.classList.add('btn-success')
-    } else {
-      buttonText += "All Platforms"
-      this.submitButtonTarget.classList.remove('btn-secondary')
-      this.submitButtonTarget.classList.add('btn-success')
+    if (!shopifyChecked && !ebayChecked) {
+      buttonText = isSequential ? "Finalize Only & Next" : "Finalize Only"
+      buttonClass = "btn btn-secondary"
+    } else if (shopifyChecked && ebayChecked) {
+      buttonText = baseText + " All" + nextText
+    } else if (shopifyChecked) {
+      buttonText = baseText + " Shopify" + nextText
+    } else if (ebayChecked) {
+      buttonText = baseText + " eBay" + nextText
     }
     
+    // Update button
+    this.submitButtonTarget.className = buttonClass
     this.submitButtonTarget.innerHTML = `
       <i class="bi bi-rocket-takeoff me-1"></i>
       ${buttonText}
     `
+    
+    // Update the hidden input value to reflect whether we should list
+    const shouldList = shopifyChecked || ebayChecked
+    this.submitButtonTarget.value = shouldList ? "true" : "false"
   }
 } 
