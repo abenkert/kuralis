@@ -106,11 +106,12 @@ module Shopify
             @shop
           )
 
-          if result[:success]
-            Rails.logger.info "Successfully processed Shopify order #{extract_id_from_gid(order_data['id'])}"
+          # Use the helper method for consistent logging
+          OrderProcessingService.log_processing_result(result, extract_id_from_gid(order_data["id"]), "Shopify")
+
+          # Only add to active_order_ids if this was actually processed (not cached)
+          if result[:success] && !OrderProcessingService.cached_result?(result)
             active_order_ids << result[:order].id
-          else
-            Rails.logger.warn "Shopify order #{extract_id_from_gid(order_data['id'])} processed with errors: #{result[:errors].join(', ')}"
           end
 
         rescue OrderProcessingService::OrderProcessingError => e

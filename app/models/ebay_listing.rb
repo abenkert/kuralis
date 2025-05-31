@@ -29,13 +29,6 @@ class EbayListing < ApplicationRecord
   # Custom validation to ensure quantity_sold doesn't exceed total_quantity
   validate :quantity_sold_not_greater_than_total
 
-  # Custom validation to ensure available quantity matches calculation
-  validate :available_quantity_matches_calculation
-  #   validates :sale_price, numericality: { greater_than_or_equal_to: 0 },
-  #             allow_nil: true
-  #   validates :original_price, numericality: { greater_than_or_equal_to: 0 },
-  #             allow_nil: true
-  #   validates :quantity, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   # Scopes
   scope :active, -> { where(ebay_status: "active") }
   scope :completed, -> { where(ebay_status: "completed") }
@@ -194,13 +187,6 @@ class EbayListing < ApplicationRecord
   def quantity_sold_not_greater_than_total
     if quantity_sold > total_quantity
       errors.add(:quantity_sold, "cannot exceed total_quantity")
-    end
-  end
-
-  # Custom validation to ensure available quantity matches calculation
-  def available_quantity_matches_calculation
-    if quantity != total_quantity - quantity_sold
-      errors.add(:quantity, "must match the calculation of total_quantity minus quantity_sold")
     end
   end
 

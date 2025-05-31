@@ -147,11 +147,8 @@ module Ebay
             @shop
           )
 
-          if result[:success]
-            Rails.logger.info "Successfully processed eBay order #{ebay_order['orderId']}"
-          else
-            Rails.logger.warn "eBay order #{ebay_order['orderId']} processed with errors: #{result[:errors].join(', ')}"
-          end
+          # Use the helper method for consistent logging
+          OrderProcessingService.log_processing_result(result, ebay_order["orderId"], "eBay")
 
         rescue OrderProcessingService::OrderProcessingError => e
           Rails.logger.error "Failed to process eBay order #{ebay_order['orderId']}: #{e.message}"

@@ -16,10 +16,12 @@ module Ebay
 
         if preserve_listing
             # Mark as completed instead of destroying (preserves valuable listing data)
+            total_quantity = @ebay_listing.total_quantity
             @ebay_listing.update!(
               quantity: 0,
               ebay_status: "completed",
-              end_time: Time.current
+              end_time: Time.current,
+              quantity_sold: total_quantity
           )
           Rails.logger.info "eBay listing #{@ebay_listing.ebay_item_id} marked as completed (preserved)"
         else

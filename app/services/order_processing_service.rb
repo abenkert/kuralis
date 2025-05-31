@@ -5,8 +5,32 @@ class OrderProcessingService
   # Cache TTL for processed orders
   IDEMPOTENCY_TTL = 7.days
 
+  # Configuration: whether to cache failed processing results
+  # Set to false to allow re-processing of failed orders (useful for debugging)
+  CACHE_FAILED_RESULTS = ENV.fetch("CACHE_FAILED_ORDER_RESULTS", "false") == "true"
+
   def self.process_order_with_idempotency(order_data, platform, shop)
     new(order_data, platform, shop).process_with_idempotency
+  end
+
+  # Helper method to check if a result is from cache
+  def self.cached_result?(result)
+    result.is_a?(Hash) && result[:cached] == true
+  end
+
+  # Helper method to log processing results consistently
+  def self.log_processing_result(result, order_id, platform)
+    if cached_result?(result)
+      if result[:success]
+        Rails.logger.info "#{platform.capitalize} order #{order_id} already processed successfully (cached)"
+      else
+        Rails.logger.info "#{platform.capitalize} order #{order_id} already processed with errors (cached): #{result[:errors].join(', ')}"
+      end
+    elsif result[:success]
+      Rails.logger.info "Successfully processed #{platform} order #{order_id}"
+    else
+      Rails.logger.warn "#{platform.capitalize} order #{order_id} processed with errors: #{result[:errors].join(', ')}"
+    end
   end
 
   def initialize(order_data, platform, shop)
@@ -24,8 +48,12 @@ class OrderProcessingService
 
     # Check if order was already processed
     if Rails.cache.exist?("order_processed:#{idempotency_key}")
-      Rails.logger.info "Skipping duplicate order processing for key=#{idempotency_key}"
-      return Rails.cache.read("order_result:#{idempotency_key}")
+      cached_result = Rails.cache.read("order_result:#{idempotency_key}")
+      Rails.logger.info "Skipping duplicate order processing for key=#{idempotency_key} (returning cached result: success=#{cached_result[:success]})"
+
+      # Add a flag to indicate this is a cached result
+      cached_result[:cached] = true
+      return cached_result
     end
 
     # Process the order within a transaction
